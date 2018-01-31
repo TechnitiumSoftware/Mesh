@@ -1,6 +1,6 @@
 ﻿/*
-Technitium Bit Chat
-Copyright (C) 2017  Shreyas Zare (shreyas@technitium.com)
+Technitium Ano
+Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ using TechnitiumLibrary.Security.Cryptography;
 *  
 */
 
-namespace BitChatCore.Network.SecureChannel
+namespace AnoCore.Network.SecureChannel
 {
     public class SecureChannelHandshakePacket
     {
@@ -75,6 +75,7 @@ namespace BitChatCore.Network.SecureChannel
     {
         #region variables
 
+        readonly byte _version;
         readonly BinaryNumber _nonce;
         readonly SecureChannelCryptoOptionFlags _cryptoOptions;
 
@@ -82,18 +83,34 @@ namespace BitChatCore.Network.SecureChannel
 
         #region constructor
 
-        public SecureChannelHandshakeHello(BinaryNumber nonce, SecureChannelCryptoOptionFlags cryptoOptions)
+        public SecureChannelHandshakeHello(SecureChannelCryptoOptionFlags cryptoOptions)
             : base(SecureChannelCode.None)
         {
-            _nonce = nonce;
+            _version = 5;
+            _nonce = BinaryNumber.GenerateRandomNumber256();
             _cryptoOptions = cryptoOptions;
         }
 
         public SecureChannelHandshakeHello(Stream s)
             : base(s)
         {
-            _nonce = new BinaryNumber(s);
-            _cryptoOptions = (SecureChannelCryptoOptionFlags)s.ReadByte();
+            int version = s.ReadByte();
+
+            switch (version)
+            {
+                case -1:
+                    throw new EndOfStreamException();
+
+                case 5:
+                    _version = (byte)version;
+                    _nonce = new BinaryNumber(s);
+                    _cryptoOptions = (SecureChannelCryptoOptionFlags)s.ReadByte();
+                    break;
+
+                default:
+                    _version = (byte)version;
+                    break;
+            }
         }
 
         #endregion
@@ -104,6 +121,7 @@ namespace BitChatCore.Network.SecureChannel
         {
             base.WriteTo(s);
 
+            s.WriteByte(_version);
             _nonce.WriteTo(s);
             s.WriteByte((byte)_cryptoOptions);
         }
@@ -111,6 +129,9 @@ namespace BitChatCore.Network.SecureChannel
         #endregion
 
         #region properties
+
+        public byte Version
+        { get { return _version; } }
 
         public BinaryNumber Nonce
         { get { return _nonce; } }
@@ -121,7 +142,98 @@ namespace BitChatCore.Network.SecureChannel
         #endregion
     }
 
-    class SecureChannelHandshakeKeyExchange : SecureChannelHandshakePacket
+    public class SecureChannelHandshakeKeyExchange : SecureChannelHandshakePacket
+    {
+        #region variables
+
+        readonly byte[] _ephemeralPublicKey;
+        readonly BinaryNumber _pskAuth;
+
+        #endregion
+
+        #region constructor
+
+        public SecureChannelHandshakeKeyExchange(KeyAgreement keyAgreement, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, byte[] psk)
+            : base(SecureChannelCode.None)
+        {
+            _ephemeralPublicKey = keyAgreement.GetPublicKey();
+            _pskAuth = GetPskAuthValue(serverHello.CryptoOptions, _ephemeralPublicKey, serverHello.Nonce.Number, clientHello.Nonce.Number, psk);
+        }
+
+        public SecureChannelHandshakeKeyExchange(Stream s)
+            : base(s)
+        {
+            byte[] buffer = new byte[2];
+            OffsetStream.StreamRead(s, buffer, 0, 2);
+            _ephemeralPublicKey = new byte[BitConverter.ToUInt16(buffer, 0)];
+            OffsetStream.StreamRead(s, _ephemeralPublicKey, 0, _ephemeralPublicKey.Length);
+
+            _pskAuth = new BinaryNumber(s);
+        }
+
+        #endregion
+
+        #region private
+
+        private BinaryNumber GetPskAuthValue(SecureChannelCryptoOptionFlags cryptoOption, byte[] ephemeralPublicKey, byte[] serverNonce, byte[] clientNonce, byte[] psk)
+        {
+            using (MemoryStream mS = new MemoryStream())
+            {
+                mS.Write(ephemeralPublicKey, 0, ephemeralPublicKey.Length);
+                mS.Write(serverNonce, 0, serverNonce.Length);
+                mS.Write(clientNonce, 0, clientNonce.Length);
+                mS.Position = 0;
+
+                if (psk == null)
+                    psk = new byte[] { };
+
+                switch (cryptoOption)
+                {
+                    case SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                    case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                        using (HMAC hmac = new HMACSHA256(psk))
+                        {
+                            return new BinaryNumber(hmac.ComputeHash(mS));
+                        }
+
+                    default:
+                        throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, null, null);
+                }
+            }
+        }
+
+        #endregion
+
+        #region public
+
+        public bool IsPskAuthValid(SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, byte[] psk)
+        {
+            BinaryNumber generatedPskAuthValue = GetPskAuthValue(serverHello.CryptoOptions, _ephemeralPublicKey, serverHello.Nonce.Number, clientHello.Nonce.Number, psk);
+
+            return _pskAuth.Equals(generatedPskAuthValue);
+        }
+
+        public override void WriteTo(Stream s)
+        {
+            base.WriteTo(s);
+
+            s.Write(BitConverter.GetBytes(Convert.ToUInt16(_ephemeralPublicKey.Length)), 0, 2);
+            s.Write(_ephemeralPublicKey, 0, _ephemeralPublicKey.Length);
+
+            _pskAuth.WriteTo(s);
+        }
+
+        #endregion
+
+        #region properties
+
+        public byte[] EphemeralPublicKey
+        { get { return _ephemeralPublicKey; } }
+
+        #endregion
+    }
+
+    public class SecureChannelHandshakeAuthentication : SecureChannelHandshakePacket
     {
         #region variables
 
@@ -132,37 +244,89 @@ namespace BitChatCore.Network.SecureChannel
 
         #region constructor
 
-        public SecureChannelHandshakeKeyExchange(byte[] publicKey, AsymmetricCryptoKey privateKey, string hashAlgo)
+        public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, byte[] privateKey)
             : base(SecureChannelCode.None)
         {
-            _publicKey = publicKey;
-            _signature = privateKey.Sign(new MemoryStream(_publicKey, false), hashAlgo);
+            switch (serverHello.CryptoOptions)
+            {
+                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                    using (RSA rsa = RSA.Create())
+                    {
+                        RSAParameters rsaPrivateKey = DEREncoding.DecodeRSAPrivateKey(privateKey);
+                        rsa.ImportParameters(rsaPrivateKey);
+
+                        if (rsa.KeySize != 2048)
+                            throw new ArgumentException("RSA key size is not valid for selected crypto option: " + serverHello.CryptoOptions.ToString());
+
+                        _publicKey = DEREncoding.EncodeRSAPublicKey(rsaPrivateKey);
+
+                        using (MemoryStream mS = new MemoryStream())
+                        {
+                            mS.Write(keyExchange.EphemeralPublicKey, 0, keyExchange.EphemeralPublicKey.Length);
+                            mS.Write(serverHello.Nonce.Number, 0, serverHello.Nonce.Number.Length);
+                            mS.Write(clientHello.Nonce.Number, 0, clientHello.Nonce.Number.Length);
+                            mS.Position = 0;
+
+                            _signature = rsa.SignData(mS, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                        }
+                    }
+                    break;
+
+                default:
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, null, null);
+            }
         }
 
-        public SecureChannelHandshakeKeyExchange(Stream s)
+        public SecureChannelHandshakeAuthentication(Stream s)
             : base(s)
         {
             byte[] buffer = new byte[2];
-            ushort length;
 
             OffsetStream.StreamRead(s, buffer, 0, 2);
-            length = BitConverter.ToUInt16(buffer, 0);
-            _publicKey = new byte[length];
-            OffsetStream.StreamRead(s, _publicKey, 0, length);
+            _publicKey = new byte[BitConverter.ToUInt16(buffer, 0)];
+            OffsetStream.StreamRead(s, _publicKey, 0, _publicKey.Length);
 
             OffsetStream.StreamRead(s, buffer, 0, 2);
-            length = BitConverter.ToUInt16(buffer, 0);
-            _signature = new byte[length];
-            OffsetStream.StreamRead(s, _signature, 0, length);
+            _signature = new byte[BitConverter.ToUInt16(buffer, 0)];
+            OffsetStream.StreamRead(s, _signature, 0, _signature.Length);
         }
 
         #endregion
 
         #region public
 
-        public bool IsSignatureValid(Certificate signingCert, string hashAlgo)
+        public bool IsPublicKeyValid(string remotePeerAnoId)
         {
-            return AsymmetricCryptoKey.Verify(new MemoryStream(_publicKey, false), _signature, hashAlgo, signingCert);
+            return AnoProfile.IsAnoIdValid(remotePeerAnoId, _publicKey);
+        }
+
+        public bool IsSignatureValid(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
+        {
+            switch (serverHello.CryptoOptions)
+            {
+                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                    using (RSA rsa = RSA.Create())
+                    {
+                        RSAParameters rsaPublicKey = DEREncoding.DecodeRSAPublicKey(_publicKey);
+                        rsa.ImportParameters(rsaPublicKey);
+
+                        if (rsa.KeySize != 2048)
+                            throw new ArgumentException("RSA key size is not valid for selected crypto option: " + serverHello.CryptoOptions.ToString());
+
+                        using (MemoryStream mS = new MemoryStream())
+                        {
+                            mS.Write(keyExchange.EphemeralPublicKey, 0, keyExchange.EphemeralPublicKey.Length);
+                            mS.Write(serverHello.Nonce.Number, 0, serverHello.Nonce.Number.Length);
+                            mS.Write(clientHello.Nonce.Number, 0, clientHello.Nonce.Number.Length);
+                            mS.Position = 0;
+
+                            return rsa.VerifyData(mS, _signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                        }
+                    }
+
+                default:
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, null, null);
+            }
         }
 
         public override void WriteTo(Stream s)
@@ -182,103 +346,6 @@ namespace BitChatCore.Network.SecureChannel
 
         public byte[] PublicKey
         { get { return _publicKey; } }
-
-        #endregion
-    }
-
-    class SecureChannelHandshakeAuthentication : SecureChannelHandshakePacket
-    {
-        #region variables
-
-        readonly BinaryNumber _hmac;
-
-        #endregion
-
-        #region constructor
-
-        public SecureChannelHandshakeAuthentication(SecureChannelHandshakeHello hello, byte[] masterKey)
-            : base(SecureChannelCode.None)
-        {
-            using (MemoryStream mS = new MemoryStream(32))
-            {
-                hello.WriteTo(mS);
-                mS.Position = 0;
-
-                _hmac = new BinaryNumber((new HMACSHA256(masterKey)).ComputeHash(mS));
-            }
-        }
-
-        public SecureChannelHandshakeAuthentication(Stream s)
-            : base(s)
-        {
-            _hmac = new BinaryNumber(s);
-        }
-
-        #endregion
-
-        #region public
-
-        public bool IsValid(SecureChannelHandshakeHello hello, byte[] masterKey)
-        {
-            using (MemoryStream mS = new MemoryStream(32))
-            {
-                hello.WriteTo(mS);
-                mS.Position = 0;
-
-                BinaryNumber computedHmac = new BinaryNumber((new HMACSHA256(masterKey)).ComputeHash(mS));
-                return _hmac.Equals(computedHmac);
-            }
-        }
-
-        public override void WriteTo(Stream s)
-        {
-            base.WriteTo(s);
-
-            _hmac.WriteTo(s);
-        }
-
-        #endregion
-    }
-
-    class SecureChannelHandshakeCertificate : SecureChannelHandshakePacket
-    {
-        #region variables
-
-        readonly Certificate _cert;
-
-        #endregion
-
-        #region constructor
-
-        public SecureChannelHandshakeCertificate(Certificate cert)
-            : base(SecureChannelCode.None)
-        {
-            _cert = cert;
-        }
-
-        public SecureChannelHandshakeCertificate(Stream s)
-            : base(s)
-        {
-            _cert = new Certificate(s);
-        }
-
-        #endregion
-
-        #region public
-
-        public override void WriteTo(Stream s)
-        {
-            base.WriteTo(s);
-
-            _cert.WriteTo(s);
-        }
-
-        #endregion
-
-        #region properties
-
-        public Certificate Certificate
-        { get { return _cert; } }
 
         #endregion
     }

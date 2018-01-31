@@ -1,6 +1,6 @@
 ﻿/*
-Technitium Bit Chat
-Copyright (C) 2015  Shreyas Zare (shreyas@technitium.com)
+Technitium Ano
+Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,69 +27,75 @@ using TechnitiumLibrary.Security.Cryptography;
 
 /*
 =============
-= VERSION 3 =
+= VERSION 5 =
 =============
 
 FEATURES-
 ---------
- - random challenge on both ends to prevent replay attacks.
- - ephemeral keys used for key exchange to provide perfect forward secrecy.
- - pre-shared key based auth to prevent direct certificate disclosure, preventing identity disclosure to active attacker.
- - encrypted digital certificate exchange to prevent certificate disclosure while exchange, preventing identity disclosure to passive attacker.
- - digital certificate based authentication for ensuring identity and prevent MiTM.
- - secure channel data packet authenticated by HMACSHA256(cipher-text) to provide authenticated encryption.
- - key re-negotation feature for allowing the secure channel to remain always on.
+ - random nonce on both ends to prevent replay attacks.
+ - ephemeral keys used for key exchange to provide perfect forward secrecy (PFS).
+ - optional pre-shared key based auth to prevent public key disclosure, preventing identity disclosure to active attacker.
+ - encrypted public key authentication to prevent identity disclosure to passive sniffing attack.
+ - ano id based public key authentication for ensuring identity and prevent MiTM.
+ - secure channel data packet authenticated by HMACSHA256(cipher-text) to provide authenticated encryption (AE) in Encrypt-then-MAC (EtM) mode.
+ - key auto renegotation feature for allowing the secure channel to remain always on.
+ - server only ano id based authentication to allow blog feed services.
+ - ANON mode to allow open group chat based on only PSK authentication.
  
-<==============================================================================>
-                              SERVER        CLIENT
-<==============================================================================>
-                             version  --->
-                                      <---  version supported
-<------------------------------------------------------------------------------> version selection done
-                                            client nonce +
-                                      <---  crypto options  
-                      server nonce +  
-              selected crypto option  ---> 
-<------------------------------------------------------------------------------> hello handshake done
-              ephemeral public key +
-                           signature  --->
-                                      <---  ephemeral public key +
-                                            signature
-<------------------------------------------------------------------------------> key exchange done
-  master key = HMACSHA256(client hello + server hello, derived key)
-      OR
-  master key = HMACSHA256(HMACSHA256(client hello + server hello, psk), derived key)
-<------------------------------------------------------------------------------> master key generated on both sides with optional pre-shared key
-                                      <---  HMACSHA256(server hello, master key)
-HMACSHA256(client hello, master key)  --->
-<------------------------------------------------------------------------------> verify master key using HMAC authentication; encryption layer ON
-                                      <---  certificate
-                         certificate  --->
-<------------------------------------------------------------------------------> cert exchange done
-      verify certificate and ephemeral public key signature
-<------------------------------------------------------------------------------> final authentication done; data exchange ON
-                                data  <-->  data
-<==============================================================================>
+<=======================================================================================>
+                                  SERVER        CLIENT
+<=======================================================================================>
+                                                version +
+                                                client nonce +
+                                          <---  crypto options  
+                               version +  ---> 
+                          server nonce +  
+                  selected crypto option 
+<---------------------------------------------------------------------------------------> hello exchange done
+           server ephemeral public key +
+     PSK auth = HMACSHA256(
+       server ephemeral public key + 
+       server nonce + client nonce, PSK)  --->
+                                          <---  client ephemeral public key +
+                                                PSK auth = HMACSHA256(
+                                                  client ephemeral public key + 
+                                                  server nonce + client nonce, PSK)
+<---------------------------------------------------------------------------------------> key exchange + PSK auth done
+          master key = HMACSHA256(server hello + client hello, derived key)
+<---------------------------------------------------------------------------------------> encryption layer ON
+                                                (optional) client public key +
+                                                signature(client ephemeral public key + 
+                                                  server nonce + client nonce, 
+                                          <---    client public key)
+                     server public key +  --->
+ signature(server ephemeral public key + 
+   server nonce + client nonce, 
+   server public key)
+<---------------------------------------------------------------------------------------> do ano id based authentication
+                   match public key with ano id and verify signature
+<=======================================================================================> handshake complete
+                                    data  <-->  data
+<=======================================================================================>
  */
 
-/*  Encrypted Secure Channel data packet with HMAC of the packet appended
-* 
-*  +----------------+----------------+----------------+---------------//----------------++--------------//----------------+
-*  |     data length (uint16)        | flags (8 bits) |              data               ||          HMAC (EtM)            |
-*  +----------------+----------------+----------------+---------------//----------------++--------------//----------------+
-*  
+/*  Encrypted Secure Channel data packet with HMAC of the packet appended for authenticated encryption (AE) in Encrypt-then-MAC (EtM) mode
+  
+   +----------------+----------------+----------------+---------------//----------------++--------------//----------------+
+   |    packet length (uint16)       | flags (8 bits) |              data               ||          HMAC (EtM)            |
+   +----------------+----------------+----------------+---------------//----------------++--------------//----------------+
+   
 */
 
-namespace BitChatCore.Network.SecureChannel
+namespace AnoCore.Network.SecureChannel
 {
-    public enum SecureChannelCryptoOptionFlags : byte
+    public enum SecureChannelCryptoOptionFlags : ushort
     {
         None = 0,
-        DHE2048_RSA_WITH_AES256_CBC_HMAC_SHA256 = 1,
-        ECDHE256_RSA_WITH_AES256_CBC_HMAC_SHA256 = 2
+        DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256 = 1,
+        DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256 = 2
     }
 
-    abstract class SecureChannelStream : Stream
+    public abstract class SecureChannelStream : Stream
     {
         #region variables
 
@@ -98,29 +104,31 @@ namespace BitChatCore.Network.SecureChannel
         const byte HEADER_FLAG_CLOSE_CHANNEL = 2;
 
         readonly protected static RandomNumberGenerator _rnd = new RNGCryptoServiceProvider();
-        readonly static RandomNumberGenerator _rndPadding = new RNGCryptoServiceProvider();
 
         readonly protected IPEndPoint _remotePeerEP;
-        protected Certificate _remotePeerCert;
+        readonly protected string _remotePeerAnoId;
 
         //io & crypto related
         protected Stream _baseStream;
         protected SecureChannelCryptoOptionFlags _selectedCryptoOption;
-        int _blockSizeBytes;
-        SymmetricCryptoKey _encryptionKey;
-        ICryptoTransform _cryptoEncryptor;
-        ICryptoTransform _cryptoDecryptor;
+        SymmetricAlgorithm _encryptionAlgo;
+        SymmetricAlgorithm _decryptionAlgo;
+        ICryptoTransform _encryptor;
+        ICryptoTransform _decryptor;
         HMAC _authHMACEncrypt;
         HMAC _authHMACDecrypt;
+        int _blockSizeBytes;
+        int _authHMACSizeBytes;
 
-        //re-negotiation
-        long _reNegotiateOnBytesSent;
-        int _reNegotiateAfterSeconds;
-        bool _reNegotiating = false;
+        //renegotiation
+        long _renegotiateOnBytesSent;
+        int _renegotiateAfterSeconds;
         long _bytesSent = 0;
         DateTime _connectedOn;
-        Timer _reNegotiationTimer;
-        const int _reNegotiationTimerInterval = 30000;
+        Timer _renegotiationTimer;
+        const int _renegotiationTimerInterval = 30000;
+        bool _isRenegotiating;
+        readonly object _renegotiationLock = new object();
 
         readonly object _writeLock = new object();
         readonly object _readLock = new object();
@@ -128,8 +136,6 @@ namespace BitChatCore.Network.SecureChannel
         //buffering
         public const int MAX_PACKET_SIZE = 65504; //mod 32 round figure
         const int BUFFER_SIZE = 65535;
-
-        int _authHMACSize;
 
         readonly byte[] _writeBufferData = new byte[BUFFER_SIZE];
         int _writeBufferPosition = 3;
@@ -141,18 +147,18 @@ namespace BitChatCore.Network.SecureChannel
         int _readBufferLength;
         readonly byte[] _readEncryptedData = new byte[BUFFER_SIZE];
 
-        MemoryStream _reNegotiateReadBuffer;
-        bool _channelClosed = false;
+        bool _secureChannelStreamClosed = false;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelStream(IPEndPoint remotePeerEP, int reNegotiateOnBytesSent, int reNegotiateAfterSeconds)
+        public SecureChannelStream(IPEndPoint remotePeerEP, string remotePeerAnoId, int renegotiateOnBytesSent, int renegotiateAfterSeconds)
         {
             _remotePeerEP = remotePeerEP;
-            _reNegotiateOnBytesSent = reNegotiateOnBytesSent;
-            _reNegotiateAfterSeconds = reNegotiateAfterSeconds;
+            _remotePeerAnoId = remotePeerAnoId;
+            _renegotiateOnBytesSent = renegotiateOnBytesSent;
+            _renegotiateAfterSeconds = renegotiateAfterSeconds;
         }
 
         #endregion
@@ -169,21 +175,13 @@ namespace BitChatCore.Network.SecureChannel
                 {
                     _baseStream.Dispose();
 
-                    _reNegotiationTimer.Dispose();
+                    _renegotiationTimer.Dispose();
 
-                    lock (_readLock)
-                    {
-                        if (_reNegotiateReadBuffer != null)
-                        {
-                            _reNegotiateReadBuffer.Dispose();
-                            _reNegotiateReadBuffer = null;
-                        }
-                    }
+                    _encryptor.Dispose();
+                    _decryptor.Dispose();
 
-                    _cryptoEncryptor.Dispose();
-                    _cryptoDecryptor.Dispose();
-
-                    _encryptionKey.Dispose();
+                    _encryptionAlgo.Dispose();
+                    _decryptionAlgo.Dispose();
 
                     _authHMACEncrypt.Dispose();
                     _authHMACDecrypt.Dispose();
@@ -203,7 +201,7 @@ namespace BitChatCore.Network.SecureChannel
 
         public override bool CanRead
         {
-            get { return true; }
+            get { return !_secureChannelStreamClosed; }
         }
 
         public override bool CanSeek
@@ -213,7 +211,7 @@ namespace BitChatCore.Network.SecureChannel
 
         public override bool CanWrite
         {
-            get { return true; }
+            get { return !_secureChannelStreamClosed; }
         }
 
         public override bool CanTimeout
@@ -267,12 +265,12 @@ namespace BitChatCore.Network.SecureChannel
 
             lock (_writeLock)
             {
-                if (_channelClosed)
+                if (_secureChannelStreamClosed)
                     throw new ObjectDisposedException("SecureChannelStream"); //channel already closed
 
-                do
+                while (true)
                 {
-                    int bytesAvailable = MAX_PACKET_SIZE - _writeBufferPosition - _authHMACSize;
+                    int bytesAvailable = MAX_PACKET_SIZE - _writeBufferPosition - _authHMACSizeBytes;
                     if (bytesAvailable < count)
                     {
                         if (bytesAvailable > 0)
@@ -292,7 +290,6 @@ namespace BitChatCore.Network.SecureChannel
                         break;
                     }
                 }
-                while (true);
             }
         }
 
@@ -300,7 +297,7 @@ namespace BitChatCore.Network.SecureChannel
         {
             lock (_writeLock)
             {
-                if (_channelClosed)
+                if (_secureChannelStreamClosed)
                     throw new ObjectDisposedException("SecureChannelStream"); //channel already closed
 
                 FlushBuffer(HEADER_FLAG_NONE);
@@ -314,16 +311,11 @@ namespace BitChatCore.Network.SecureChannel
 
             lock (_readLock)
             {
-                int bytesAvailableForRead;
-
-                if (_reNegotiateReadBuffer == null)
-                    bytesAvailableForRead = _readBufferLength - _readBufferPosition;
-                else
-                    bytesAvailableForRead = Convert.ToInt32(_reNegotiateReadBuffer.Length - _reNegotiateReadBuffer.Position);
+                int bytesAvailableForRead = _readBufferLength - _readBufferPosition;
 
                 while (bytesAvailableForRead < 1)
                 {
-                    if (_channelClosed)
+                    if (_secureChannelStreamClosed)
                         return 0; //channel closed; end of stream
 
                     try
@@ -339,14 +331,31 @@ namespace BitChatCore.Network.SecureChannel
                     switch (_readBufferData[2])
                     {
                         case HEADER_FLAG_RENEGOTIATE:
-                            //received re-negotiate flag
-                            lock (_writeLock)
+                            //received renegotiate flag
+                            if (_isRenegotiating)
                             {
-                                _reNegotiating = true;
-                                FlushBuffer(HEADER_FLAG_RENEGOTIATE);
+                                //renegotiation initiator party
+                                lock (_renegotiationLock)
+                                {
+                                    _isRenegotiating = false;
 
-                                StartReNegotiation();
-                                _reNegotiating = false;
+                                    //signal wait handle to proceed with renegotiation
+                                    Monitor.Pulse(_renegotiationLock);
+                                }
+
+                                //release read lock for allowing renegotiation to take read lock and wait for it to complete
+                                if (!Monitor.Wait(_readLock, ReadTimeout))
+                                    throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerAnoId, "Renegotiation timed out.");
+                            }
+                            else
+                            {
+                                //renegotiation receiver party
+                                lock (_writeLock)
+                                {
+                                    FlushBuffer(HEADER_FLAG_RENEGOTIATE);
+
+                                    StartRenegotiation();
+                                }
                             }
                             break;
 
@@ -366,21 +375,8 @@ namespace BitChatCore.Network.SecureChannel
                     if (bytesToRead > bytesAvailableForRead)
                         bytesToRead = bytesAvailableForRead;
 
-                    if (_reNegotiateReadBuffer == null)
-                    {
-                        Buffer.BlockCopy(_readBufferData, _readBufferPosition, buffer, offset, bytesToRead);
-                        _readBufferPosition += bytesToRead;
-                    }
-                    else
-                    {
-                        _reNegotiateReadBuffer.Read(buffer, offset, bytesToRead);
-
-                        if (_reNegotiateReadBuffer.Length == _reNegotiateReadBuffer.Position)
-                        {
-                            _reNegotiateReadBuffer.Dispose();
-                            _reNegotiateReadBuffer = null;
-                        }
-                    }
+                    Buffer.BlockCopy(_readBufferData, _readBufferPosition, buffer, offset, bytesToRead);
+                    _readBufferPosition += bytesToRead;
 
                     return bytesToRead;
                 }
@@ -391,7 +387,7 @@ namespace BitChatCore.Network.SecureChannel
         {
             lock (_writeLock)
             {
-                if (_channelClosed)
+                if (_secureChannelStreamClosed)
                     return; //channel already closed
 
                 try
@@ -401,7 +397,7 @@ namespace BitChatCore.Network.SecureChannel
                 catch
                 { }
 
-                _channelClosed = true;
+                _secureChannelStreamClosed = true;
             }
 
             base.Close();
@@ -438,21 +434,21 @@ namespace BitChatCore.Network.SecureChannel
                 //write padding
                 if (bytesPadding > 0)
                 {
-                    _rndPadding.GetBytes(_writeBufferPadding);
+                    _rnd.GetBytes(_writeBufferPadding);
 
                     Buffer.BlockCopy(_writeBufferPadding, 0, _writeBufferData, _writeBufferPosition, bytesPadding);
                     _writeBufferPosition += bytesPadding;
                 }
 
                 //encrypt buffered data
-                if (_cryptoEncryptor.CanTransformMultipleBlocks)
+                if (_encryptor.CanTransformMultipleBlocks)
                 {
-                    _cryptoEncryptor.TransformBlock(_writeBufferData, 0, _writeBufferPosition, _writeEncryptedData, 0);
+                    _encryptor.TransformBlock(_writeBufferData, 0, _writeBufferPosition, _writeEncryptedData, 0);
                 }
                 else
                 {
                     for (int offset = 0; offset < _writeBufferPosition; offset += _blockSizeBytes)
-                        _cryptoEncryptor.TransformBlock(_writeBufferData, offset, _blockSizeBytes, _writeEncryptedData, offset);
+                        _encryptor.TransformBlock(_writeBufferData, offset, _blockSizeBytes, _writeEncryptedData, offset);
                 }
 
                 //append auth hmac to encrypted data
@@ -475,7 +471,7 @@ namespace BitChatCore.Network.SecureChannel
 
             //read first block to read the encrypted packet size
             OffsetStream.StreamRead(_baseStream, _readEncryptedData, 0, _blockSizeBytes);
-            _cryptoDecryptor.TransformBlock(_readEncryptedData, 0, _blockSizeBytes, _readBufferData, 0);
+            _decryptor.TransformBlock(_readEncryptedData, 0, _blockSizeBytes, _readBufferData, 0);
             _readBufferPosition = _blockSizeBytes;
 
             //read packet header 2 byte length
@@ -484,7 +480,7 @@ namespace BitChatCore.Network.SecureChannel
 
             dataLength -= _blockSizeBytes;
 
-            if (_cryptoDecryptor.CanTransformMultipleBlocks)
+            if (_decryptor.CanTransformMultipleBlocks)
             {
                 if (dataLength > 0)
                 {
@@ -497,7 +493,7 @@ namespace BitChatCore.Network.SecureChannel
 
                     //read pending blocks
                     OffsetStream.StreamRead(_baseStream, _readEncryptedData, _readBufferPosition, pendingBytes);
-                    _cryptoDecryptor.TransformBlock(_readEncryptedData, _readBufferPosition, pendingBytes, _readBufferData, _readBufferPosition);
+                    _decryptor.TransformBlock(_readEncryptedData, _readBufferPosition, pendingBytes, _readBufferData, _readBufferPosition);
                     _readBufferPosition += pendingBytes;
                 }
             }
@@ -507,7 +503,7 @@ namespace BitChatCore.Network.SecureChannel
                 {
                     //read next block
                     OffsetStream.StreamRead(_baseStream, _readEncryptedData, _readBufferPosition, _blockSizeBytes);
-                    _cryptoDecryptor.TransformBlock(_readEncryptedData, _readBufferPosition, _blockSizeBytes, _readBufferData, _readBufferPosition);
+                    _decryptor.TransformBlock(_readEncryptedData, _readBufferPosition, _blockSizeBytes, _readBufferData, _readBufferPosition);
                     _readBufferPosition += _blockSizeBytes;
 
                     dataLength -= _blockSizeBytes;
@@ -515,14 +511,14 @@ namespace BitChatCore.Network.SecureChannel
             }
 
             //read auth hmac
-            BinaryNumber authHMAC = new BinaryNumber(new byte[_authHMACSize]);
-            OffsetStream.StreamRead(_baseStream, authHMAC.Number, 0, _authHMACSize);
+            BinaryNumber authHMAC = new BinaryNumber(new byte[_authHMACSizeBytes]);
+            OffsetStream.StreamRead(_baseStream, authHMAC.Number, 0, _authHMACSizeBytes);
 
             //verify auth hmac with computed hmac
             BinaryNumber computedAuthHMAC = new BinaryNumber(_authHMACDecrypt.ComputeHash(_readEncryptedData, 0, _readBufferPosition));
 
             if (!computedAuthHMAC.Equals(authHMAC))
-                throw new SecureChannelException(SecureChannelCode.InvalidMessageHMACReceived, _remotePeerEP, _remotePeerCert);
+                throw new SecureChannelException(SecureChannelCode.InvalidMessageHMACReceived, _remotePeerEP, _remotePeerAnoId);
 
             _readBufferPosition = 3;
 
@@ -534,14 +530,14 @@ namespace BitChatCore.Network.SecureChannel
         {
             try
             {
-                if (((_reNegotiateOnBytesSent > 0) && (_bytesSent > _reNegotiateOnBytesSent)) || ((_reNegotiateAfterSeconds > 0) && (_connectedOn.AddSeconds(_reNegotiateAfterSeconds) < DateTime.UtcNow)))
-                    ReNegotiateNow();
+                if (((_renegotiateOnBytesSent > 0) && (_bytesSent > _renegotiateOnBytesSent)) || ((_renegotiateAfterSeconds > 0) && (_connectedOn.AddSeconds(_renegotiateAfterSeconds) < DateTime.UtcNow)))
+                    RenegotiateNow();
             }
             catch
             { }
             finally
             {
-                _reNegotiationTimer.Change(_reNegotiationTimerInterval, Timeout.Infinite);
+                _renegotiationTimer.Change(_renegotiationTimerInterval, Timeout.Infinite);
             }
         }
 
@@ -549,55 +545,31 @@ namespace BitChatCore.Network.SecureChannel
 
         #region public
 
-        public void ReNegotiateNow()
+        public void RenegotiateNow()
         {
-            //re-negotiotion initiator needs to have a special read buffer to store the decrypted data that was on the way from other end while the negotiation start is indicated.
-
-            lock (_readLock)
+            lock (_writeLock)
             {
-                if (_reNegotiateReadBuffer != null)
-                    return; //read buffer from previous re-negotiation is still not empty to proceed
-
-                if (_channelClosed)
+                if (_secureChannelStreamClosed)
                     return; //channel already closed
 
-                lock (_writeLock)
+                lock (_renegotiationLock)
                 {
-                    _reNegotiating = true;
+                    _isRenegotiating = true;
+
+                    //send RENEGOTIATE packet
                     FlushBuffer(HEADER_FLAG_RENEGOTIATE);
 
-                    //write available buffered data into special read buffer
-                    int bytesAvailableForRead = _readBufferLength - _readBufferPosition;
-                    if (bytesAvailableForRead > 0)
+                    //wait till other party responds with a return RENEGOTIATE packet
+                    if (!Monitor.Wait(_renegotiationLock, ReadTimeout))
+                        throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerAnoId, "Renegotiation timed out.");
+
+                    lock (_readLock)
                     {
-                        _reNegotiateReadBuffer = new MemoryStream(BUFFER_SIZE);
-                        _reNegotiateReadBuffer.Write(_readBufferData, _readBufferPosition, bytesAvailableForRead);
+                        StartRenegotiation();
+
+                        //signal read thread to stop waiting and take read lock
+                        Monitor.Pulse(_readLock);
                     }
-
-                    //write in-transit data into special read buffer
-                    do
-                    {
-                        bytesAvailableForRead = ReadSecureChannelPacket();
-                        if (bytesAvailableForRead > 0)
-                        {
-                            if (_reNegotiateReadBuffer == null)
-                                _reNegotiateReadBuffer = new MemoryStream(BUFFER_SIZE);
-
-                            _reNegotiateReadBuffer.Write(_readBufferData, _readBufferPosition, bytesAvailableForRead);
-                        }
-                    }
-                    while (_readBufferData[2] != 1);
-
-                    //received re-negotiate flag
-
-                    StartReNegotiation();
-                    _reNegotiating = false;
-
-                    if (_reNegotiateReadBuffer != null)
-                        _reNegotiateReadBuffer.Position = 0;
-
-                    _readBufferLength = 0;
-                    _readBufferPosition = 0;
                 }
             }
         }
@@ -606,51 +578,83 @@ namespace BitChatCore.Network.SecureChannel
 
         #region protected
 
-        protected abstract void StartReNegotiation();
+        protected abstract void StartRenegotiation();
 
-        protected bool IsReNegotiating()
-        {
-            return _reNegotiating;
-        }
-
-        protected byte[] GenerateMasterKey(SecureChannelHandshakeHello clientHello, SecureChannelHandshakeHello serverHello, byte[] preSharedKey, KeyAgreement keyAgreement, byte[] otherPartyPublicKey)
+        protected void EnableEncryption(Stream inputStream, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, KeyAgreement keyAgreement, SecureChannelHandshakeKeyExchange otherPartyKeyExchange)
         {
             using (MemoryStream mS = new MemoryStream(128))
             {
-                clientHello.WriteTo(mS);
                 serverHello.WriteTo(mS);
+                clientHello.WriteTo(mS);
 
-                if (preSharedKey == null)
-                    keyAgreement.HmacMessage = mS.ToArray();
-                else
-                    keyAgreement.HmacMessage = (new HMACSHA256(preSharedKey)).ComputeHash(mS.ToArray());
+                keyAgreement.HmacMessage = mS.ToArray();
             }
 
-            return keyAgreement.DeriveKeyMaterial(otherPartyPublicKey);
-        }
+            byte[] masterKey = keyAgreement.DeriveKeyMaterial(otherPartyKeyExchange.EphemeralPublicKey);
 
-        protected void EnableEncryption(Stream inputStream, SymmetricCryptoKey encryptionKey, SymmetricCryptoKey decryptionKey, HMAC authHMACEncrypt, HMAC authHMACDecrypt)
-        {
-            //create reader and writer objects
-            _encryptionKey = encryptionKey;
-            _cryptoEncryptor = encryptionKey.GetEncryptor();
-            _cryptoDecryptor = decryptionKey.GetDecryptor();
+            switch (serverHello.CryptoOptions)
+            {
+                case SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+
+                    //generating AES IV of 128bit block size using MD5
+                    byte[] eIV;
+                    byte[] dIV;
+
+                    using (HashAlgorithm hash = HashAlgorithm.Create("MD5"))
+                    {
+                        if (this is SecureChannelServerStream)
+                        {
+                            eIV = hash.ComputeHash(serverHello.Nonce.Number);
+                            dIV = hash.ComputeHash(clientHello.Nonce.Number);
+                        }
+                        else
+                        {
+                            eIV = hash.ComputeHash(clientHello.Nonce.Number);
+                            dIV = hash.ComputeHash(serverHello.Nonce.Number);
+                        }
+                    }
+
+                    //create encryptor
+                    _encryptionAlgo = Aes.Create();
+                    _encryptionAlgo.Key = masterKey;
+                    _encryptionAlgo.IV = eIV;
+                    _encryptionAlgo.Padding = PaddingMode.None; //padding is managed by secure channel
+                    _encryptionAlgo.Mode = CipherMode.CBC;
+
+                    _encryptor = _encryptionAlgo.CreateEncryptor();
+                    _authHMACEncrypt = new HMACSHA256(masterKey);
+
+                    //create decryptor
+                    _decryptionAlgo = Aes.Create();
+                    _decryptionAlgo.Key = masterKey;
+                    _decryptionAlgo.IV = dIV;
+                    _decryptionAlgo.Padding = PaddingMode.None; //padding is managed by secure channel
+                    _decryptionAlgo.Mode = CipherMode.CBC;
+
+                    _decryptor = _decryptionAlgo.CreateDecryptor();
+                    _authHMACDecrypt = new HMACSHA256(masterKey);
+
+                    //init variables
+                    _blockSizeBytes = _encryptionAlgo.BlockSize / 8;
+                    _writeBufferPadding = new byte[_blockSizeBytes];
+
+                    _authHMACSizeBytes = _authHMACEncrypt.HashSize / 8;
+                    break;
+
+                default:
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
+            }
 
             //init variables
             _baseStream = inputStream;
-            _blockSizeBytes = encryptionKey.BlockSize / 8;
-            _writeBufferPadding = new byte[_blockSizeBytes];
-            _authHMACEncrypt = authHMACEncrypt;
-            _authHMACDecrypt = authHMACDecrypt;
-            _authHMACSize = authHMACEncrypt.HashSize / 8;
-
             _bytesSent = 0;
             _connectedOn = DateTime.UtcNow;
 
-            if (_reNegotiationTimer == null)
+            if (_renegotiationTimer == null)
             {
-                if ((_reNegotiateOnBytesSent > 0) || (_reNegotiateAfterSeconds > 0))
-                    _reNegotiationTimer = new Timer(ReNegotiationTimerCallback, null, _reNegotiationTimerInterval, Timeout.Infinite);
+                if ((_renegotiateOnBytesSent > 0) || (_renegotiateAfterSeconds > 0))
+                    _renegotiationTimer = new Timer(ReNegotiationTimerCallback, null, _renegotiationTimerInterval, Timeout.Infinite);
             }
         }
 
@@ -661,8 +665,8 @@ namespace BitChatCore.Network.SecureChannel
         public IPEndPoint RemotePeerEP
         { get { return _remotePeerEP; } }
 
-        public Certificate RemotePeerCertificate
-        { get { return _remotePeerCert; } }
+        public string RemotePeerAnoId
+        { get { return _remotePeerAnoId; } }
 
         public SecureChannelCryptoOptionFlags SelectedCryptoOption
         { get { return _selectedCryptoOption; } }

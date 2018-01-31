@@ -1,6 +1,6 @@
 ﻿/*
-Technitium Bit Chat
-Copyright (C) 2017  Shreyas Zare (shreyas@technitium.com)
+Technitium Ano
+Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -17,67 +17,65 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-using System;
 using System.IO;
 using System.Net;
-using System.Security.Cryptography;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Security.Cryptography;
 
-namespace BitChatCore.Network.SecureChannel
+namespace AnoCore.Network.SecureChannel
 {
-    class SecureChannelServerStream : SecureChannelStream
+    public class SecureChannelServerStream : SecureChannelStream
     {
         #region variables
 
-        readonly int _version;
-
-        readonly CertificateStore _serverCredentials;
-        readonly Certificate[] _trustedRootCertificates;
-        readonly ISecureChannelSecurityManager _manager;
         readonly SecureChannelCryptoOptionFlags _supportedOptions;
         readonly byte[] _preSharedKey;
+        readonly byte[] _privateKey;
+        readonly bool _authenticateClient;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelServerStream(Stream stream, IPEndPoint remotePeerEP, CertificateStore serverCredentials, Certificate[] trustedRootCertificates, ISecureChannelSecurityManager manager, SecureChannelCryptoOptionFlags supportedOptions, int reNegotiateOnBytesSent, int reNegotiateAfterSeconds, byte[] preSharedKey)
-            : base(remotePeerEP, reNegotiateOnBytesSent, reNegotiateAfterSeconds)
+        public SecureChannelServerStream(Stream stream, IPEndPoint remotePeerEP, string remotePeerAnoId, int reNegotiateOnBytesSent, int reNegotiateAfterSeconds, SecureChannelCryptoOptionFlags supportedOptions, byte[] preSharedKey, byte[] privateKey, bool authenticateClient)
+            : base(remotePeerEP, remotePeerAnoId, reNegotiateOnBytesSent, reNegotiateAfterSeconds)
         {
-            _serverCredentials = serverCredentials;
-            _trustedRootCertificates = trustedRootCertificates;
-            _manager = manager;
             _supportedOptions = supportedOptions;
             _preSharedKey = preSharedKey;
+            _privateKey = privateKey;
+            _authenticateClient = authenticateClient;
 
+            Start(stream);
+        }
+
+        #endregion
+
+        #region private
+
+        private void Start(Stream stream)
+        {
             try
             {
-                //send server protocol version
-                stream.WriteByte(4);
-                stream.Flush();
+                WriteBufferedStream bufferedStream = new WriteBufferedStream(stream, 8 * 1024);
 
-                //read client protocol version
-                _version = stream.ReadByte();
+                //read client hello
+                SecureChannelHandshakeHello clientHello = new SecureChannelHandshakeHello(bufferedStream);
 
-                switch (_version)
+                switch (clientHello.Version)
                 {
-                    case 4:
-                        ProtocolV4(stream);
+                    case 5:
+                        ProtocolV5(bufferedStream, clientHello);
                         break;
 
-                    case -1:
-                        throw new EndOfStreamException();
-
                     default:
-                        throw new SecureChannelException(SecureChannelCode.ProtocolVersionNotSupported, _remotePeerEP, _remotePeerCert, "SecureChannel protocol version '" + _version + "' not supported.");
+                        throw new SecureChannelException(SecureChannelCode.ProtocolVersionNotSupported, _remotePeerEP, _remotePeerAnoId, "SecureChannel protocol version not supported: " + clientHello.Version);
                 }
             }
             catch (SecureChannelException ex)
             {
                 if (ex.Code == SecureChannelCode.RemoteError)
                 {
-                    throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerCert, ex.Message, ex);
+                    throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerAnoId, ex.Message, ex);
                 }
                 else
                 {
@@ -96,6 +94,9 @@ namespace BitChatCore.Network.SecureChannel
                     catch
                     { }
 
+                    if (ex.PeerEP == null)
+                        throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerAnoId, ex.Message, ex);
+
                     throw;
                 }
             }
@@ -103,179 +104,119 @@ namespace BitChatCore.Network.SecureChannel
             {
                 throw;
             }
-            catch
-            {
-                try
-                {
-                    Stream s;
+            //catch
+            //{
+            //    try
+            //    {
+            //        Stream s;
 
-                    if (_baseStream == null)
-                        s = stream;
-                    else
-                        s = this;
+            //        if (_baseStream == null)
+            //            s = stream;
+            //        else
+            //            s = this;
 
-                    new SecureChannelHandshakePacket(SecureChannelCode.UnknownException).WriteTo(s);
-                    s.Flush();
-                }
-                catch
-                { }
+            //        new SecureChannelHandshakePacket(SecureChannelCode.UnknownException).WriteTo(s);
+            //        s.Flush();
+            //    }
+            //    catch
+            //    { }
 
-                throw;
-            }
+            //    throw;
+            //}
         }
 
-        #endregion
-
-        #region private
-
-        private void ProtocolV4(Stream stream)
+        private void ProtocolV5(WriteBufferedStream bufferedStream, SecureChannelHandshakeHello clientHello)
         {
-            WriteBufferedStream bufferedStream = new WriteBufferedStream(stream, 8 * 1024);
-
-            #region 1. hello handshake
-
-            //read client hello
-            SecureChannelHandshakeHello clientHello = new SecureChannelHandshakeHello(bufferedStream);
+            #region 1. hello handshake check
 
             //select crypto option
-            _selectedCryptoOption = _supportedOptions & clientHello.CryptoOptions;
+            SecureChannelCryptoOptionFlags availableCryptoOptions = _supportedOptions & clientHello.CryptoOptions;
 
-            if (_selectedCryptoOption == SecureChannelCryptoOptionFlags.None)
+            if (availableCryptoOptions == SecureChannelCryptoOptionFlags.None)
             {
-                throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerCert);
+                throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
             }
-            else if ((_selectedCryptoOption & SecureChannelCryptoOptionFlags.ECDHE256_RSA_WITH_AES256_CBC_HMAC_SHA256) > 0)
+            else if (availableCryptoOptions.HasFlag(SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256))
             {
-                _selectedCryptoOption = SecureChannelCryptoOptionFlags.ECDHE256_RSA_WITH_AES256_CBC_HMAC_SHA256;
+                _selectedCryptoOption = SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256;
             }
-            else if ((_selectedCryptoOption & SecureChannelCryptoOptionFlags.DHE2048_RSA_WITH_AES256_CBC_HMAC_SHA256) > 0)
+            else if (availableCryptoOptions.HasFlag(SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256))
             {
-                _selectedCryptoOption = SecureChannelCryptoOptionFlags.DHE2048_RSA_WITH_AES256_CBC_HMAC_SHA256;
+                _selectedCryptoOption = SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256;
             }
             else
             {
-                throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerCert);
+                throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
             }
 
-            //send server hello
-            SecureChannelHandshakeHello serverHello = new SecureChannelHandshakeHello(BinaryNumber.GenerateRandomNumber256(), _selectedCryptoOption);
+            //write server hello
+            SecureChannelHandshakeHello serverHello = new SecureChannelHandshakeHello(_selectedCryptoOption);
             serverHello.WriteTo(bufferedStream);
 
             #endregion
 
             #region 2. key exchange
 
-            SymmetricEncryptionAlgorithm encAlgo;
-            string hashAlgo;
             KeyAgreement keyAgreement;
 
             switch (_selectedCryptoOption)
             {
-                case SecureChannelCryptoOptionFlags.DHE2048_RSA_WITH_AES256_CBC_HMAC_SHA256:
-                    encAlgo = SymmetricEncryptionAlgorithm.Rijndael;
-                    hashAlgo = "SHA256";
+                case SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                     keyAgreement = new DiffieHellman(DiffieHellmanGroupType.RFC3526, 2048, KeyAgreementKeyDerivationFunction.Hmac, KeyAgreementKeyDerivationHashAlgorithm.SHA256);
                     break;
 
-                case SecureChannelCryptoOptionFlags.ECDHE256_RSA_WITH_AES256_CBC_HMAC_SHA256:
-                    encAlgo = SymmetricEncryptionAlgorithm.Rijndael;
-                    hashAlgo = "SHA256";
-                    keyAgreement = new TechnitiumLibrary.Security.Cryptography.ECDiffieHellman(256, KeyAgreementKeyDerivationFunction.Hmac, KeyAgreementKeyDerivationHashAlgorithm.SHA256);
-                    break;
-
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerCert);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
             }
 
             //send server key exchange data
-            new SecureChannelHandshakeKeyExchange(keyAgreement.GetPublicKey(), _serverCredentials.PrivateKey, hashAlgo).WriteTo(bufferedStream);
+            SecureChannelHandshakeKeyExchange serverKeyExchange = new SecureChannelHandshakeKeyExchange(keyAgreement, serverHello, clientHello, _preSharedKey);
+            serverKeyExchange.WriteTo(bufferedStream);
             bufferedStream.Flush();
 
             //read client key exchange data
             SecureChannelHandshakeKeyExchange clientKeyExchange = new SecureChannelHandshakeKeyExchange(bufferedStream);
 
-            //generate master key
-            byte[] masterKey = GenerateMasterKey(clientHello, serverHello, _preSharedKey, keyAgreement, clientKeyExchange.PublicKey);
-
-            //verify master key using HMAC authentication
-            {
-                SecureChannelHandshakeAuthentication clientAuthentication = new SecureChannelHandshakeAuthentication(bufferedStream);
-                if (!clientAuthentication.IsValid(serverHello, masterKey))
-                    throw new SecureChannelException(SecureChannelCode.ProtocolAuthenticationFailed, _remotePeerEP, _remotePeerCert);
-
-                SecureChannelHandshakeAuthentication serverAuthentication = new SecureChannelHandshakeAuthentication(clientHello, masterKey);
-                serverAuthentication.WriteTo(bufferedStream);
-                bufferedStream.Flush();
-            }
-
-            //enable channel encryption
-            switch (encAlgo)
-            {
-                case SymmetricEncryptionAlgorithm.Rijndael:
-                    //using MD5 for generating AES IV of 128bit block size
-                    HashAlgorithm md5Hash = HashAlgorithm.Create("MD5");
-                    byte[] eIV = md5Hash.ComputeHash(serverHello.Nonce.Number);
-                    byte[] dIV = md5Hash.ComputeHash(clientHello.Nonce.Number);
-
-                    //create encryption and decryption objects
-                    SymmetricCryptoKey encryptionKey = new SymmetricCryptoKey(SymmetricEncryptionAlgorithm.Rijndael, masterKey, eIV, PaddingMode.None);
-                    SymmetricCryptoKey decryptionKey = new SymmetricCryptoKey(SymmetricEncryptionAlgorithm.Rijndael, masterKey, dIV, PaddingMode.None);
-
-                    //enable encryption
-                    EnableEncryption(stream, encryptionKey, decryptionKey, new HMACSHA256(masterKey), new HMACSHA256(masterKey));
-                    break;
-
-                default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerCert);
-            }
-
-            //channel encryption is ON!
+            if (!clientKeyExchange.IsPskAuthValid(serverHello, clientHello, _preSharedKey))
+                throw new SecureChannelException(SecureChannelCode.PskAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
 
             #endregion
 
-            #region 3. exchange & verify certificates & signatures
+            #region 3. enable encryption
 
-            if (!IsReNegotiating())
-            {
-                //read client certificate
-                _remotePeerCert = new SecureChannelHandshakeCertificate(this).Certificate;
+            EnableEncryption(bufferedStream, serverHello, clientHello, keyAgreement, clientKeyExchange);
 
-                //verify client certificate
-                try
-                {
-                    _remotePeerCert.Verify(_trustedRootCertificates);
-                }
-                catch (Exception ex)
-                {
-                    throw new SecureChannelException(SecureChannelCode.InvalidRemoteCertificate, _remotePeerEP, _remotePeerCert, "Invalid remote certificate.", ex);
-                }
-            }
+            #endregion
 
-            //verify key exchange signature
+            #region 4. AnoId based authentication
+
             switch (_selectedCryptoOption)
             {
-                case SecureChannelCryptoOptionFlags.DHE2048_RSA_WITH_AES256_CBC_HMAC_SHA256:
-                case SecureChannelCryptoOptionFlags.ECDHE256_RSA_WITH_AES256_CBC_HMAC_SHA256:
-                    if (_remotePeerCert.PublicKeyEncryptionAlgorithm != AsymmetricEncryptionAlgorithm.RSA)
-                        throw new SecureChannelException(SecureChannelCode.InvalidRemoteCertificateAlgorithm, _remotePeerEP, _remotePeerCert);
+                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                    if (_authenticateClient)
+                    {
+                        //read client auth
+                        SecureChannelHandshakeAuthentication clientAuth = new SecureChannelHandshakeAuthentication(this);
 
-                    if (!clientKeyExchange.IsSignatureValid(_remotePeerCert, "SHA256"))
-                        throw new SecureChannelException(SecureChannelCode.InvalidRemoteKeyExchangeSignature, _remotePeerEP, _remotePeerCert);
+                        //authenticate client
+                        if (!clientAuth.IsPublicKeyValid(_remotePeerAnoId))
+                            throw new SecureChannelException(SecureChannelCode.InvalidPeerPublicKey, _remotePeerEP, _remotePeerAnoId);
 
+                        if (!clientAuth.IsSignatureValid(clientKeyExchange, serverHello, clientHello))
+                            throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
+                    }
+
+                    //write server auth
+                    new SecureChannelHandshakeAuthentication(serverKeyExchange, serverHello, clientHello, _privateKey).WriteTo(this);
+                    this.Flush();
                     break;
 
+                case SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                    break; //no auth for ANON
+
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerCert);
-            }
-
-            if ((_manager != null) && !_manager.ProceedConnection(_remotePeerCert))
-                throw new SecureChannelException(SecureChannelCode.SecurityManagerDeclinedAccess, _remotePeerEP, _remotePeerCert, "Security manager declined access.");
-
-            //send server certificate
-            if (!IsReNegotiating())
-            {
-                new SecureChannelHandshakeCertificate(_serverCredentials.Certificate).WriteTo(this);
-                this.Flush();
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
             }
 
             #endregion
@@ -285,32 +226,9 @@ namespace BitChatCore.Network.SecureChannel
 
         #region overrides
 
-        protected override void StartReNegotiation()
+        protected override void StartRenegotiation()
         {
-            try
-            {
-                switch (_version)
-                {
-                    case 4:
-                        ProtocolV4(_baseStream);
-                        break;
-
-                    default:
-                        throw new SecureChannelException(SecureChannelCode.ProtocolVersionNotSupported, _remotePeerEP, _remotePeerCert, "SecureChannel protocol version '" + _version + "' not supported.");
-                }
-            }
-            catch (SecureChannelException ex)
-            {
-                try
-                {
-                    new SecureChannelHandshakePacket(ex.Code).WriteTo(_baseStream);
-                    _baseStream.Flush();
-                }
-                catch
-                { }
-
-                throw;
-            }
+            Start(_baseStream);
         }
 
         #endregion

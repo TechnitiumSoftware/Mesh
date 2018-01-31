@@ -1,6 +1,6 @@
 ﻿/*
-Technitium Bit Chat
-Copyright (C) 2015  Shreyas Zare (shreyas@technitium.com)
+Technitium Ano
+Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,9 +20,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 using System;
 using System.IO;
 using System.Net;
-using TechnitiumLibrary.Security.Cryptography;
 
-namespace BitChatCore.Network.SecureChannel
+namespace AnoCore.Network.SecureChannel
 {
     public enum SecureChannelCode : byte
     {
@@ -30,12 +29,11 @@ namespace BitChatCore.Network.SecureChannel
         RemoteError = 1,
         ProtocolVersionNotSupported = 2,
         NoMatchingCryptoAvailable = 3,
-        SecurityManagerDeclinedAccess = 4,
-        InvalidRemoteCertificate = 5,
-        InvalidRemoteCertificateAlgorithm = 6,
-        InvalidRemoteKeyExchangeSignature = 7,
-        InvalidMessageHMACReceived = 8,
-        ProtocolAuthenticationFailed = 9,
+        PskAuthenticationFailed = 4,
+        InvalidPeerPublicKey = 5,
+        PeerAuthenticationFailed = 6,
+        InvalidMessageHMACReceived = 7,
+        RenegotiationFailed = 8,
         UnknownException = 254,
     }
 
@@ -46,33 +44,33 @@ namespace BitChatCore.Network.SecureChannel
 
         SecureChannelCode _code;
         IPEndPoint _peerEP;
-        Certificate _peerCertificate;
+        string _peerAnoId;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, Certificate peerCertificate)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, string peerAnoId)
         {
             _code = code;
             _peerEP = peerEP;
-            _peerCertificate = peerCertificate;
+            _peerAnoId = peerAnoId;
         }
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, Certificate peerCertificate, string message)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, string peerAnoId, string message)
             : base(message)
         {
             _code = code;
             _peerEP = peerEP;
-            _peerCertificate = peerCertificate;
+            _peerAnoId = peerAnoId;
         }
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, Certificate peerCertificate, string message, Exception innerException)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, string peerAnoId, string message, Exception innerException)
             : base(message, innerException)
         {
             _code = code;
             _peerEP = peerEP;
-            _peerCertificate = peerCertificate;
+            _peerAnoId = peerAnoId;
         }
 
         public SecureChannelException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context)
@@ -89,8 +87,8 @@ namespace BitChatCore.Network.SecureChannel
         public IPEndPoint PeerEP
         { get { return _peerEP; } }
 
-        public Certificate PeerCertificate
-        { get { return _peerCertificate; } }
+        public string PeerAnoId
+        { get { return _peerAnoId; } }
 
         #endregion
     }
