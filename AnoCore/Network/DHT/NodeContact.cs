@@ -1,6 +1,6 @@
 ﻿/*
-Technitium Bit Chat
-Copyright (C) 2017  Shreyas Zare (shreyas@technitium.com)
+Technitium Ano
+Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,9 +24,9 @@ using System.Security.Cryptography;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 
-namespace BitChatCore.Network.KademliaDHT
+namespace AnoCore.Network.DHT
 {
-    class NodeContact : IWriteStream, IComparable<NodeContact>
+    class NodeContact : IWriteStream
     {
         #region variables
 
@@ -40,6 +40,7 @@ namespace BitChatCore.Network.KademliaDHT
 
         protected bool _currentNode;
         DateTime _lastSeen;
+        int _successfulRpcCount = 0;
         int _failRpcCount = 0;
 
         #endregion
@@ -56,6 +57,11 @@ namespace BitChatCore.Network.KademliaDHT
         {
             _nodeEP = nodeEP;
             _nodeID = GetNodeID(_nodeEP);
+        }
+
+        protected NodeContact()
+        {
+            _nodeID = BinaryNumber.GenerateRandomNumber160();
         }
 
         #endregion
@@ -91,6 +97,7 @@ namespace BitChatCore.Network.KademliaDHT
         public void UpdateLastSeenTime()
         {
             _lastSeen = DateTime.UtcNow;
+            _successfulRpcCount++;
             _failRpcCount = 0;
         }
 
@@ -119,11 +126,6 @@ namespace BitChatCore.Network.KademliaDHT
             return _nodeID.GetHashCode();
         }
 
-        public int CompareTo(NodeContact other)
-        {
-            return _lastSeen.CompareTo(other._lastSeen);
-        }
-
         public override string ToString()
         {
             return _nodeEP.ToString();
@@ -133,17 +135,20 @@ namespace BitChatCore.Network.KademliaDHT
 
         #region properties
 
-        public BinaryNumber NodeID
-        { get { return _nodeID; } }
-
         public IPEndPoint NodeEP
         { get { return _nodeEP; } }
+
+        public BinaryNumber NodeID
+        { get { return _nodeID; } }
 
         public bool IsCurrentNode
         { get { return _currentNode; } }
 
         public DateTime LastSeen
         { get { return _lastSeen; } }
+
+        public int SuccessfulRpcCount
+        { get { return _successfulRpcCount; } }
 
         #endregion
     }

@@ -1,6 +1,6 @@
 ﻿/*
-Technitium Bit Chat
-Copyright (C) 2017  Shreyas Zare (shreyas@technitium.com)
+Technitium Ano
+Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,11 +23,10 @@ using System.IO;
 using System.Net;
 using System.Threading;
 using TechnitiumLibrary.IO;
-using TechnitiumLibrary.Net;
 
 /*
- * Kademlia based Distributed Hash Table (DHT) Implementation For Bit Chat
- * =======================================================================
+ * Kademlia based Distributed Hash Table (DHT) Implementation For Ano
+ * ==================================================================
  *
  * FEATURES IMPLEMENTED
  * --------------------
@@ -35,10 +34,11 @@ using TechnitiumLibrary.Net;
  * 2. RPC: TCP based protocol with PING & FIND_NODE implemented. FIND_PEER & ANNOUNCE_PEER implemented similar to BitTorrent DHT implementation.
  * 3. Peer data eviction after 15 mins of receiving announcement.
  * 4. Parallel lookup: FIND_NODE lookup with alpha=3 implemented.
+ * 5. Each node has internal random node ID for managing k-bucket and a different perceived node ID computed based on node's IPEndPoint to limit Sybil attack.
  * 
  * FEATURES NOT IMPLEMENTED
  * ------------------------
- * 1. Node data republishing. Each peer MUST announce itself within 15 mins to all nodes closer to bit chat networkID.
+ * 1. Node data republishing. Each peer MUST announce itself within 15 mins to all nodes closer to Ano networkId. This is not feasible due to node having different internal node ID and external perceived node ID.
  * 
  * REFERENCE
  * ---------
@@ -46,7 +46,7 @@ using TechnitiumLibrary.Net;
  * 2. http://www.bittorrent.org/beps/bep_0005.html
 */
 
-namespace BitChatCore.Network.KademliaDHT
+namespace AnoCore.Network.DHT
 {
     class DhtNode : IDisposable
     {
@@ -70,12 +70,12 @@ namespace BitChatCore.Network.KademliaDHT
 
         #region constructor
 
-        public DhtNode(IPEndPoint localNodeEP, IDhtNodeManager manager)
+        public DhtNode(IDhtNodeManager manager)
         {
             _manager = manager;
 
             //init routing table
-            _currentNode = new CurrentNode(localNodeEP);
+            _currentNode = new CurrentNode();
             _routingTable = new KBucket(_currentNode);
 
             //start health timer
@@ -173,14 +173,13 @@ namespace BitChatCore.Network.KademliaDHT
 
         private DhtRpcPacket Query(DhtRpcPacket query, NodeContact contact)
         {
-            if (_currentNode.NodeEP.AddressFamily != contact.NodeEP.AddressFamily)
-                return null;
-
             Stream s = null;
 
             try
             {
-                s = _manager.GetConnectionStream(contact.NodeEP);
+                s = _manager.GetConnection(contact.NodeEP);
+                if (s == null)
+                    return null;
 
                 //set timeout
                 s.WriteTimeout = QUERY_TIMEOUT;
@@ -439,9 +438,9 @@ namespace BitChatCore.Network.KademliaDHT
             return contacts as NodeContact[];
         }
 
-        private PeerEndPoint[] QueryFindPeers(NodeContact[] initialContacts, BinaryNumber networkID)
+        private PeerEndPoint[] QueryFindPeers(NodeContact[] initialContacts, BinaryNumber networkId)
         {
-            object peers = QueryFind(initialContacts, networkID, DhtRpcType.FIND_PEERS);
+            object peers = QueryFind(initialContacts, networkId, DhtRpcType.FIND_PEERS);
 
             if (peers == null)
                 return null;
@@ -449,9 +448,9 @@ namespace BitChatCore.Network.KademliaDHT
             return peers as PeerEndPoint[];
         }
 
-        private PeerEndPoint[] QueryAnnounce(NodeContact[] initialContacts, BinaryNumber networkID, ushort servicePort)
+        private PeerEndPoint[] QueryAnnounce(NodeContact[] initialContacts, BinaryNumber networkId, ushort servicePort)
         {
-            NodeContact[] contacts = QueryFindNode(initialContacts, networkID);
+            NodeContact[] contacts = QueryFindNode(initialContacts, networkId);
 
             if ((contacts == null) || (contacts.Length == 0))
                 return null;
@@ -464,7 +463,7 @@ namespace BitChatCore.Network.KademliaDHT
                 {
                     Thread t = new Thread(delegate (object state)
                     {
-                        DhtRpcPacket response = Query(DhtRpcPacket.CreateAnnouncePeerPacketQuery(_currentNode, networkID, servicePort), contact);
+                        DhtRpcPacket response = Query(DhtRpcPacket.CreateAnnouncePeerPacketQuery(_currentNode, networkId, servicePort), contact);
                         if ((response != null) && (response.Type == DhtRpcType.ANNOUNCE_PEER) && (response.Peers.Length > 0))
                         {
                             lock (peers)
@@ -494,22 +493,6 @@ namespace BitChatCore.Network.KademliaDHT
         #endregion
 
         #region public
-
-        public bool UpdateLocalNodeEP(IPEndPoint localNodeEP)
-        {
-            if ((localNodeEP != null) && (_currentNode.NodeEP.AddressFamily == localNodeEP.AddressFamily) && !_currentNode.NodeEP.Equals(localNodeEP))
-            {
-                NodeContact[] existingContacts = _routingTable.GetAllContacts(true);
-
-                _currentNode = new CurrentNode(localNodeEP);
-                _routingTable = new KBucket(_currentNode);
-
-                AddNode(existingContacts);
-                return true;
-            }
-
-            return false;
-        }
 
         public void AcceptConnection(Stream s, IPAddress remoteNodeIP)
         {
@@ -547,36 +530,33 @@ namespace BitChatCore.Network.KademliaDHT
 
         public void AddNode(NodeContact contact)
         {
-            if (!NetUtilities.IsPrivateIP(contact.NodeEP.Address) && (contact.NodeEP.AddressFamily == _currentNode.NodeEP.AddressFamily))
+            if (_routingTable.AddContact(contact))
             {
-                if (_routingTable.AddContact(contact))
+                ThreadPool.QueueUserWorkItem(delegate (object state)
                 {
-                    ThreadPool.QueueUserWorkItem(delegate (object state)
-                    {
-                        Query(DhtRpcPacket.CreatePingPacket(_currentNode), contact);
-                    });
-                }
+                    Query(DhtRpcPacket.CreatePingPacket(_currentNode), contact);
+                });
             }
         }
 
-        public IPEndPoint[] FindPeers(BinaryNumber networkID)
+        public IPEndPoint[] FindPeers(BinaryNumber networkId)
         {
-            NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkID);
+            NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId);
 
             if (initialContacts.Length < 1)
                 return null;
 
-            return QueryFindPeers(initialContacts, networkID);
+            return QueryFindPeers(initialContacts, networkId);
         }
 
-        public IPEndPoint[] Announce(BinaryNumber networkID, int servicePort)
+        public IPEndPoint[] Announce(BinaryNumber networkId, int servicePort)
         {
-            NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkID);
+            NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId);
 
             if (initialContacts.Length < 1)
                 return null;
 
-            return QueryAnnounce(initialContacts, networkID, Convert.ToUInt16(servicePort));
+            return QueryAnnounce(initialContacts, networkId, Convert.ToUInt16(servicePort));
         }
 
         public IPEndPoint[] GetAllNodeEPs(bool includeStaleContacts)
@@ -614,9 +594,6 @@ namespace BitChatCore.Network.KademliaDHT
         public BinaryNumber LocalNodeID
         { get { return _currentNode.NodeID; } }
 
-        public IPEndPoint LocalNodeEP
-        { get { return _currentNode.NodeEP; } }
-
         public int TotalNodes
         { get { return _routingTable.TotalContacts; } }
 
@@ -634,8 +611,7 @@ namespace BitChatCore.Network.KademliaDHT
 
             #region constructor
 
-            public CurrentNode(IPEndPoint localNodeEP)
-                : base(localNodeEP)
+            public CurrentNode()
             {
                 _currentNode = true;
             }
@@ -644,20 +620,20 @@ namespace BitChatCore.Network.KademliaDHT
 
             #region public
 
-            public void StorePeer(BinaryNumber networkID, PeerEndPoint peerEP)
+            public void StorePeer(BinaryNumber networkId, PeerEndPoint peerEP)
             {
                 lock (_data)
                 {
                     List<PeerEndPoint> peerList;
 
-                    if (_data.ContainsKey(networkID))
+                    if (_data.ContainsKey(networkId))
                     {
-                        peerList = _data[networkID];
+                        peerList = _data[networkId];
                     }
                     else
                     {
                         peerList = new List<PeerEndPoint>();
-                        _data.Add(networkID, peerList);
+                        _data.Add(networkId, peerList);
                     }
 
                     foreach (PeerEndPoint peer in peerList)
@@ -673,13 +649,13 @@ namespace BitChatCore.Network.KademliaDHT
                 }
             }
 
-            public PeerEndPoint[] GetPeers(BinaryNumber networkID)
+            public PeerEndPoint[] GetPeers(BinaryNumber networkId)
             {
                 lock (_data)
                 {
-                    if (_data.ContainsKey(networkID))
+                    if (_data.ContainsKey(networkId))
                     {
-                        List<PeerEndPoint> peers = _data[networkID];
+                        List<PeerEndPoint> peers = _data[networkId];
 
                         if (peers.Count > MAX_PEERS_TO_RETURN)
                         {
@@ -695,7 +671,7 @@ namespace BitChatCore.Network.KademliaDHT
                         }
                         else
                         {
-                            return _data[networkID].ToArray();
+                            return _data[networkId].ToArray();
                         }
                     }
                     else

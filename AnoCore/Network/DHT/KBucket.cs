@@ -1,6 +1,6 @@
 ﻿/*
-Technitium Bit Chat
-Copyright (C) 2017  Shreyas Zare (shreyas@technitium.com)
+Technitium Ano
+Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@ using System.Collections.Generic;
 using System.Threading;
 using TechnitiumLibrary.IO;
 
-namespace BitChatCore.Network.KademliaDHT
+namespace AnoCore.Network.DHT
 {
     class KBucket
     {
@@ -320,7 +320,7 @@ namespace BitChatCore.Network.KademliaDHT
             }
         }
 
-        public bool RemoveContact(NodeContact contact)
+        public bool RemoveStaleContact(NodeContact contact)
         {
             KBucket currentBucket = this;
 
@@ -342,6 +342,17 @@ namespace BitChatCore.Network.KademliaDHT
 
                         if (currentBucket._contactCount <= DhtNode.KADEMLIA_K)
                             return false; //k-bucket is not full and replacement cache is empty
+
+                        //check if there is more deserving contact to be removed than the current one
+                        foreach (NodeContact testContact in contacts)
+                        {
+                            if ((testContact != null) && testContact.IsStale() && (contact.SuccessfulRpcCount > testContact.SuccessfulRpcCount))
+                            {
+                                //set test contact for removal
+                                contact = testContact;
+                                break;
+                            }
+                        }
 
                         for (int i = 0; i < contacts.Length; i++)
                         {
@@ -514,7 +525,7 @@ namespace BitChatCore.Network.KademliaDHT
                                 if (!dhtNode.Ping(contact))
                                 {
                                     //remove stale node contact
-                                    kBucket.RemoveContact(contact);
+                                    kBucket.RemoveStaleContact(contact);
                                 }
                             });
                         }
