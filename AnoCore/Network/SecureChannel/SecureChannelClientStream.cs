@@ -28,22 +28,22 @@ namespace AnoCore.Network.SecureChannel
     {
         #region variables
 
-        readonly SecureChannelCryptoOptionFlags _supportedOptions;
+        readonly SecureChannelCipherSuite _supportedCiphers;
+        readonly SecureChannelOptions _options;
         readonly byte[] _preSharedKey;
         readonly byte[] _privateKey;
-        readonly bool _authenticateClient;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelClientStream(Stream stream, IPEndPoint remotePeerEP, string remotePeerAnoId, int reNegotiateOnBytesSent, int reNegotiateAfterSeconds, SecureChannelCryptoOptionFlags supportedOptions, byte[] preSharedKey, byte[] privateKey, bool authenticateClient)
+        public SecureChannelClientStream(Stream stream, IPEndPoint remotePeerEP, string remotePeerAnoId, int reNegotiateOnBytesSent, int reNegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, byte[] privateKey)
             : base(remotePeerEP, remotePeerAnoId, reNegotiateOnBytesSent, reNegotiateAfterSeconds)
         {
-            _supportedOptions = supportedOptions;
+            _supportedCiphers = supportedCiphers;
+            _options = options;
             _preSharedKey = preSharedKey;
             _privateKey = privateKey;
-            _authenticateClient = authenticateClient;
 
             Start(stream);
         }
@@ -59,7 +59,7 @@ namespace AnoCore.Network.SecureChannel
                 WriteBufferedStream bufferedStream = new WriteBufferedStream(stream, 8 * 1024);
 
                 //write client hello
-                SecureChannelHandshakeHello clientHello = new SecureChannelHandshakeHello(_supportedOptions);
+                SecureChannelHandshakeHello clientHello = new SecureChannelHandshakeHello(_supportedCiphers, _options);
                 clientHello.WriteTo(bufferedStream);
                 bufferedStream.Flush();
 
@@ -109,25 +109,25 @@ namespace AnoCore.Network.SecureChannel
             {
                 throw;
             }
-            //catch
-            //{
-            //    try
-            //    {
-            //        Stream s;
+            catch
+            {
+                try
+                {
+                    Stream s;
 
-            //        if (_baseStream == null)
-            //            s = stream;
-            //        else
-            //            s = this;
+                    if (_baseStream == null)
+                        s = stream;
+                    else
+                        s = this;
 
-            //        new SecureChannelHandshakePacket(SecureChannelCode.UnknownException).WriteTo(s);
-            //        s.Flush();
-            //    }
-            //    catch
-            //    { }
+                    new SecureChannelHandshakePacket(SecureChannelCode.UnknownException).WriteTo(s);
+                    s.Flush();
+                }
+                catch
+                { }
 
-            //    throw;
-            //}
+                throw;
+            }
         }
 
         private void ProtocolV5(WriteBufferedStream bufferedStream, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
@@ -135,10 +135,14 @@ namespace AnoCore.Network.SecureChannel
             #region 1. hello handshake check
 
             //read selected crypto option
-            _selectedCryptoOption = _supportedOptions & serverHello.CryptoOptions;
+            _selectedCipher = _supportedCiphers & serverHello.SupportedCiphers;
 
-            if (_selectedCryptoOption == SecureChannelCryptoOptionFlags.None)
-                throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
+            if (_selectedCipher == SecureChannelCipherSuite.None)
+                throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerAnoId);
+
+            //match options
+            if (_options != serverHello.Options)
+                throw new SecureChannelException(SecureChannelCode.NoMatchingOptionsAvailable, _remotePeerEP, _remotePeerAnoId);
 
             #endregion
 
@@ -147,20 +151,23 @@ namespace AnoCore.Network.SecureChannel
             //read server key exchange data
             SecureChannelHandshakeKeyExchange serverKeyExchange = new SecureChannelHandshakeKeyExchange(bufferedStream);
 
-            if (!serverKeyExchange.IsPskAuthValid(serverHello, clientHello, _preSharedKey))
-                throw new SecureChannelException(SecureChannelCode.PskAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
+            if (_options.HasFlag(SecureChannelOptions.PRE_SHARED_KEY_AUTHENTICATION_REQUIRED))
+            {
+                if (!serverKeyExchange.IsPskAuthValid(serverHello, clientHello, _preSharedKey))
+                    throw new SecureChannelException(SecureChannelCode.PskAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
+            }
 
             KeyAgreement keyAgreement;
 
-            switch (_selectedCryptoOption)
+            switch (_selectedCipher)
             {
-                case SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
-                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                     keyAgreement = new DiffieHellman(DiffieHellmanGroupType.RFC3526, 2048, KeyAgreementKeyDerivationFunction.Hmac, KeyAgreementKeyDerivationHashAlgorithm.SHA256);
                     break;
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerAnoId);
             }
 
             //write client key exchange data
@@ -178,10 +185,10 @@ namespace AnoCore.Network.SecureChannel
 
             #region 4. AnoId based authentication
 
-            switch (_selectedCryptoOption)
+            switch (_selectedCipher)
             {
-                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
-                    if (_authenticateClient)
+                case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                    if (_options.HasFlag(SecureChannelOptions.CLIENT_AUTHENTICATION_REQUIRED))
                     {
                         //write client auth
                         new SecureChannelHandshakeAuthentication(clientKeyExchange, serverHello, clientHello, _privateKey).WriteTo(this);
@@ -200,11 +207,11 @@ namespace AnoCore.Network.SecureChannel
 
                     break;
 
-                case SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
                     break; //no auth for ANON
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerAnoId);
             }
 
             #endregion

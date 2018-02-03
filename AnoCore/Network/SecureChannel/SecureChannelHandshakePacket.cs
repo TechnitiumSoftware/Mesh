@@ -77,18 +77,20 @@ namespace AnoCore.Network.SecureChannel
 
         readonly byte _version;
         readonly BinaryNumber _nonce;
-        readonly SecureChannelCryptoOptionFlags _cryptoOptions;
+        readonly SecureChannelCipherSuite _supportedCiphers;
+        readonly SecureChannelOptions _options;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelHandshakeHello(SecureChannelCryptoOptionFlags cryptoOptions)
+        public SecureChannelHandshakeHello(SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options)
             : base(SecureChannelCode.None)
         {
             _version = 5;
             _nonce = BinaryNumber.GenerateRandomNumber256();
-            _cryptoOptions = cryptoOptions;
+            _supportedCiphers = supportedCiphers;
+            _options = options;
         }
 
         public SecureChannelHandshakeHello(Stream s)
@@ -104,7 +106,8 @@ namespace AnoCore.Network.SecureChannel
                 case 5:
                     _version = (byte)version;
                     _nonce = new BinaryNumber(s);
-                    _cryptoOptions = (SecureChannelCryptoOptionFlags)s.ReadByte();
+                    _supportedCiphers = (SecureChannelCipherSuite)s.ReadByte();
+                    _options = (SecureChannelOptions)s.ReadByte();
                     break;
 
                 default:
@@ -123,7 +126,8 @@ namespace AnoCore.Network.SecureChannel
 
             s.WriteByte(_version);
             _nonce.WriteTo(s);
-            s.WriteByte((byte)_cryptoOptions);
+            s.WriteByte((byte)_supportedCiphers);
+            s.WriteByte((byte)_options);
         }
 
         #endregion
@@ -136,8 +140,11 @@ namespace AnoCore.Network.SecureChannel
         public BinaryNumber Nonce
         { get { return _nonce; } }
 
-        public SecureChannelCryptoOptionFlags CryptoOptions
-        { get { return _cryptoOptions; } }
+        public SecureChannelCipherSuite SupportedCiphers
+        { get { return _supportedCiphers; } }
+
+        public SecureChannelOptions Options
+        { get { return _options; } }
 
         #endregion
     }
@@ -157,7 +164,11 @@ namespace AnoCore.Network.SecureChannel
             : base(SecureChannelCode.None)
         {
             _ephemeralPublicKey = keyAgreement.GetPublicKey();
-            _pskAuth = GetPskAuthValue(serverHello.CryptoOptions, _ephemeralPublicKey, serverHello.Nonce.Number, clientHello.Nonce.Number, psk);
+
+            if (serverHello.Options.HasFlag(SecureChannelOptions.PRE_SHARED_KEY_AUTHENTICATION_REQUIRED))
+                _pskAuth = GetPskAuthValue(serverHello.SupportedCiphers, _ephemeralPublicKey, serverHello.Nonce.Number, clientHello.Nonce.Number, psk);
+            else
+                _pskAuth = new BinaryNumber(new byte[] { });
         }
 
         public SecureChannelHandshakeKeyExchange(Stream s)
@@ -175,7 +186,7 @@ namespace AnoCore.Network.SecureChannel
 
         #region private
 
-        private BinaryNumber GetPskAuthValue(SecureChannelCryptoOptionFlags cryptoOption, byte[] ephemeralPublicKey, byte[] serverNonce, byte[] clientNonce, byte[] psk)
+        private BinaryNumber GetPskAuthValue(SecureChannelCipherSuite cipher, byte[] ephemeralPublicKey, byte[] serverNonce, byte[] clientNonce, byte[] psk)
         {
             using (MemoryStream mS = new MemoryStream())
             {
@@ -187,17 +198,17 @@ namespace AnoCore.Network.SecureChannel
                 if (psk == null)
                     psk = new byte[] { };
 
-                switch (cryptoOption)
+                switch (cipher)
                 {
-                    case SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
-                    case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                    case SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                    case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                         using (HMAC hmac = new HMACSHA256(psk))
                         {
                             return new BinaryNumber(hmac.ComputeHash(mS));
                         }
 
                     default:
-                        throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, null, null);
+                        throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, null, null);
                 }
             }
         }
@@ -208,7 +219,7 @@ namespace AnoCore.Network.SecureChannel
 
         public bool IsPskAuthValid(SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, byte[] psk)
         {
-            BinaryNumber generatedPskAuthValue = GetPskAuthValue(serverHello.CryptoOptions, _ephemeralPublicKey, serverHello.Nonce.Number, clientHello.Nonce.Number, psk);
+            BinaryNumber generatedPskAuthValue = GetPskAuthValue(serverHello.SupportedCiphers, _ephemeralPublicKey, serverHello.Nonce.Number, clientHello.Nonce.Number, psk);
 
             return _pskAuth.Equals(generatedPskAuthValue);
         }
@@ -247,16 +258,16 @@ namespace AnoCore.Network.SecureChannel
         public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, byte[] privateKey)
             : base(SecureChannelCode.None)
         {
-            switch (serverHello.CryptoOptions)
+            switch (serverHello.SupportedCiphers)
             {
-                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                     using (RSA rsa = RSA.Create())
                     {
                         RSAParameters rsaPrivateKey = DEREncoding.DecodeRSAPrivateKey(privateKey);
                         rsa.ImportParameters(rsaPrivateKey);
 
                         if (rsa.KeySize != 2048)
-                            throw new ArgumentException("RSA key size is not valid for selected crypto option: " + serverHello.CryptoOptions.ToString());
+                            throw new ArgumentException("RSA key size is not valid for selected crypto option: " + serverHello.SupportedCiphers.ToString());
 
                         _publicKey = DEREncoding.EncodeRSAPublicKey(rsaPrivateKey);
 
@@ -273,7 +284,7 @@ namespace AnoCore.Network.SecureChannel
                     break;
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, null, null);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, null, null);
             }
         }
 
@@ -302,16 +313,16 @@ namespace AnoCore.Network.SecureChannel
 
         public bool IsSignatureValid(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
         {
-            switch (serverHello.CryptoOptions)
+            switch (serverHello.SupportedCiphers)
             {
-                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                     using (RSA rsa = RSA.Create())
                     {
                         RSAParameters rsaPublicKey = DEREncoding.DecodeRSAPublicKey(_publicKey);
                         rsa.ImportParameters(rsaPublicKey);
 
                         if (rsa.KeySize != 2048)
-                            throw new ArgumentException("RSA key size is not valid for selected crypto option: " + serverHello.CryptoOptions.ToString());
+                            throw new ArgumentException("RSA key size is not valid for selected crypto option: " + serverHello.SupportedCiphers.ToString());
 
                         using (MemoryStream mS = new MemoryStream())
                         {
@@ -325,7 +336,7 @@ namespace AnoCore.Network.SecureChannel
                     }
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, null, null);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, null, null);
             }
         }
 

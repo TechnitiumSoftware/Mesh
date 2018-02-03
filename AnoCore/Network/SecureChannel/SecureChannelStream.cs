@@ -47,10 +47,12 @@ FEATURES-
 <=======================================================================================>
                                                 version +
                                                 client nonce +
-                                          <---  crypto options  
+                                                supported ciphers
+                                          <---  options
                                version +  ---> 
                           server nonce +  
-                  selected crypto option 
+                       selected cipher +
+                               options
 <---------------------------------------------------------------------------------------> hello exchange done
            server ephemeral public key +
      PSK auth = HMACSHA256(
@@ -88,11 +90,18 @@ FEATURES-
 
 namespace AnoCore.Network.SecureChannel
 {
-    public enum SecureChannelCryptoOptionFlags : ushort
+    public enum SecureChannelCipherSuite : byte
     {
         None = 0,
         DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256 = 1,
         DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256 = 2
+    }
+
+    public enum SecureChannelOptions : byte
+    {
+        None = 0,
+        PRE_SHARED_KEY_AUTHENTICATION_REQUIRED = 1,
+        CLIENT_AUTHENTICATION_REQUIRED = 2
     }
 
     public abstract class SecureChannelStream : Stream
@@ -110,7 +119,7 @@ namespace AnoCore.Network.SecureChannel
 
         //io & crypto related
         protected Stream _baseStream;
-        protected SecureChannelCryptoOptionFlags _selectedCryptoOption;
+        protected SecureChannelCipherSuite _selectedCipher;
         SymmetricAlgorithm _encryptionAlgo;
         SymmetricAlgorithm _decryptionAlgo;
         ICryptoTransform _encryptor;
@@ -592,10 +601,10 @@ namespace AnoCore.Network.SecureChannel
 
             byte[] masterKey = keyAgreement.DeriveKeyMaterial(otherPartyKeyExchange.EphemeralPublicKey);
 
-            switch (serverHello.CryptoOptions)
+            switch (serverHello.SupportedCiphers)
             {
-                case SecureChannelCryptoOptionFlags.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
-                case SecureChannelCryptoOptionFlags.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
 
                     //generating AES IV of 128bit block size using MD5
                     byte[] eIV;
@@ -643,7 +652,7 @@ namespace AnoCore.Network.SecureChannel
                     break;
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCryptoAvailable, _remotePeerEP, _remotePeerAnoId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerAnoId);
             }
 
             //init variables
@@ -668,8 +677,8 @@ namespace AnoCore.Network.SecureChannel
         public string RemotePeerAnoId
         { get { return _remotePeerAnoId; } }
 
-        public SecureChannelCryptoOptionFlags SelectedCryptoOption
-        { get { return _selectedCryptoOption; } }
+        public SecureChannelCipherSuite SelectedCipher
+        { get { return _selectedCipher; } }
 
         #endregion
     }
