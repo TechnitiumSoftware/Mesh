@@ -27,7 +27,7 @@ using TechnitiumLibrary.Security.Cryptography;
 
 /*
 =============
-= VERSION 5 =
+= VERSION 1 =
 =============
 
 FEATURES-
@@ -65,11 +65,14 @@ FEATURES-
 <---------------------------------------------------------------------------------------> key exchange + PSK auth done
           master key = HMACSHA256(server hello + client hello, derived key)
 <---------------------------------------------------------------------------------------> encryption layer ON
-                                                (optional) client public key +
+                                                (optional client authentication)
+                                                anoid +
+                                                client public key +
                                                 signature(client ephemeral public key + 
                                                   server nonce + client nonce, 
                                           <---    client public key)
-                     server public key +  --->
+                                 anoid +  --->
+                     server public key +
  signature(server ephemeral public key + 
    server nonce + client nonce, 
    server public key)
@@ -115,7 +118,7 @@ namespace AnoCore.Network.SecureChannel
         readonly protected static RandomNumberGenerator _rnd = new RNGCryptoServiceProvider();
 
         readonly protected IPEndPoint _remotePeerEP;
-        readonly protected string _remotePeerAnoId;
+        protected BinaryNumber _remotePeerAnoId;
 
         //io & crypto related
         protected Stream _baseStream;
@@ -130,12 +133,12 @@ namespace AnoCore.Network.SecureChannel
         int _authHMACSizeBytes;
 
         //renegotiation
-        long _renegotiateOnBytesSent;
+        long _renegotiateAfterBytesSent;
         int _renegotiateAfterSeconds;
         long _bytesSent = 0;
         DateTime _connectedOn;
         Timer _renegotiationTimer;
-        const int _renegotiationTimerInterval = 30000;
+        const int RENEGOTIATION_TIMER_INTERVAL = 30000;
         bool _isRenegotiating;
         readonly object _renegotiationLock = new object();
 
@@ -162,11 +165,10 @@ namespace AnoCore.Network.SecureChannel
 
         #region constructor
 
-        public SecureChannelStream(IPEndPoint remotePeerEP, string remotePeerAnoId, int renegotiateOnBytesSent, int renegotiateAfterSeconds)
+        public SecureChannelStream(IPEndPoint remotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds)
         {
             _remotePeerEP = remotePeerEP;
-            _remotePeerAnoId = remotePeerAnoId;
-            _renegotiateOnBytesSent = renegotiateOnBytesSent;
+            _renegotiateAfterBytesSent = renegotiateAfterBytesSent;
             _renegotiateAfterSeconds = renegotiateAfterSeconds;
         }
 
@@ -202,6 +204,51 @@ namespace AnoCore.Network.SecureChannel
 
                 _disposed = true;
             }
+        }
+
+        #endregion
+
+        #region static
+
+        public static BinaryNumber GenerateAnoId(byte[] publicKey)
+        {
+            byte[] random = new byte[4];
+            _rnd.GetBytes(random);
+
+            byte[] hashValue;
+
+            using (HMAC hash = new HMACSHA1(random))
+            {
+                hashValue = hash.ComputeHash(publicKey);
+            }
+
+            byte[] buffer = new byte[24];
+
+            Buffer.BlockCopy(random, 0, buffer, 0, 4);
+            Buffer.BlockCopy(hashValue, 0, buffer, 4, 20);
+
+            return new BinaryNumber(buffer);
+        }
+
+        public static bool IsAnoIdValid(BinaryNumber anoId, byte[] publicKey)
+        {
+            if (anoId.Value.Length != 24)
+                return false;
+
+            byte[] random = new byte[4];
+            byte[] hashValue = new byte[20];
+
+            Buffer.BlockCopy(anoId.Value, 0, random, 0, 4);
+            Buffer.BlockCopy(anoId.Value, 4, hashValue, 0, 20);
+
+            BinaryNumber generatedHashValue;
+
+            using (HMAC hash = new HMACSHA1(random))
+            {
+                generatedHashValue = new BinaryNumber(hash.ComputeHash(publicKey));
+            }
+
+            return generatedHashValue.Equals(new BinaryNumber(hashValue));
         }
 
         #endregion
@@ -521,13 +568,13 @@ namespace AnoCore.Network.SecureChannel
 
             //read auth hmac
             BinaryNumber authHMAC = new BinaryNumber(new byte[_authHMACSizeBytes]);
-            OffsetStream.StreamRead(_baseStream, authHMAC.Number, 0, _authHMACSizeBytes);
+            OffsetStream.StreamRead(_baseStream, authHMAC.Value, 0, _authHMACSizeBytes);
 
             //verify auth hmac with computed hmac
             BinaryNumber computedAuthHMAC = new BinaryNumber(_authHMACDecrypt.ComputeHash(_readEncryptedData, 0, _readBufferPosition));
 
             if (!computedAuthHMAC.Equals(authHMAC))
-                throw new SecureChannelException(SecureChannelCode.InvalidMessageHMACReceived, _remotePeerEP, _remotePeerAnoId);
+                throw new SecureChannelException(SecureChannelCode.MessageAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
 
             _readBufferPosition = 3;
 
@@ -535,18 +582,18 @@ namespace AnoCore.Network.SecureChannel
             return _readBufferLength - _readBufferPosition;
         }
 
-        private void ReNegotiationTimerCallback(object state)
+        private void RenegotiationTimerCallback(object state)
         {
             try
             {
-                if (((_renegotiateOnBytesSent > 0) && (_bytesSent > _renegotiateOnBytesSent)) || ((_renegotiateAfterSeconds > 0) && (_connectedOn.AddSeconds(_renegotiateAfterSeconds) < DateTime.UtcNow)))
+                if (((_renegotiateAfterBytesSent > 0) && (_bytesSent > _renegotiateAfterBytesSent)) || ((_renegotiateAfterSeconds > 0) && (_connectedOn.AddSeconds(_renegotiateAfterSeconds) < DateTime.UtcNow)))
                     RenegotiateNow();
             }
             catch
             { }
             finally
             {
-                _renegotiationTimer.Change(_renegotiationTimerInterval, Timeout.Infinite);
+                _renegotiationTimer.Change(RENEGOTIATION_TIMER_INTERVAL, Timeout.Infinite);
             }
         }
 
@@ -614,13 +661,13 @@ namespace AnoCore.Network.SecureChannel
                     {
                         if (this is SecureChannelServerStream)
                         {
-                            eIV = hash.ComputeHash(serverHello.Nonce.Number);
-                            dIV = hash.ComputeHash(clientHello.Nonce.Number);
+                            eIV = hash.ComputeHash(serverHello.Nonce.Value);
+                            dIV = hash.ComputeHash(clientHello.Nonce.Value);
                         }
                         else
                         {
-                            eIV = hash.ComputeHash(clientHello.Nonce.Number);
-                            dIV = hash.ComputeHash(serverHello.Nonce.Number);
+                            eIV = hash.ComputeHash(clientHello.Nonce.Value);
+                            dIV = hash.ComputeHash(serverHello.Nonce.Value);
                         }
                     }
 
@@ -662,8 +709,8 @@ namespace AnoCore.Network.SecureChannel
 
             if (_renegotiationTimer == null)
             {
-                if ((_renegotiateOnBytesSent > 0) || (_renegotiateAfterSeconds > 0))
-                    _renegotiationTimer = new Timer(ReNegotiationTimerCallback, null, _renegotiationTimerInterval, Timeout.Infinite);
+                if ((_renegotiateAfterBytesSent > 0) || (_renegotiateAfterSeconds > 0))
+                    _renegotiationTimer = new Timer(RenegotiationTimerCallback, null, RENEGOTIATION_TIMER_INTERVAL, Timeout.Infinite);
             }
         }
 
@@ -674,7 +721,7 @@ namespace AnoCore.Network.SecureChannel
         public IPEndPoint RemotePeerEP
         { get { return _remotePeerEP; } }
 
-        public string RemotePeerAnoId
+        public BinaryNumber RemotePeerAnoId
         { get { return _remotePeerAnoId; } }
 
         public SecureChannelCipherSuite SelectedCipher

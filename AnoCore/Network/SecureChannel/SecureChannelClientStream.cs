@@ -17,6 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using TechnitiumLibrary.IO;
@@ -31,19 +32,23 @@ namespace AnoCore.Network.SecureChannel
         readonly SecureChannelCipherSuite _supportedCiphers;
         readonly SecureChannelOptions _options;
         readonly byte[] _preSharedKey;
+        readonly BinaryNumber _anoId;
         readonly byte[] _privateKey;
+        IEnumerable<BinaryNumber> _trustedAnoIds;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelClientStream(Stream stream, IPEndPoint remotePeerEP, string remotePeerAnoId, int reNegotiateOnBytesSent, int reNegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, byte[] privateKey)
-            : base(remotePeerEP, remotePeerAnoId, reNegotiateOnBytesSent, reNegotiateAfterSeconds)
+        public SecureChannelClientStream(Stream stream, IPEndPoint remotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, BinaryNumber anoId, byte[] privateKey, IEnumerable<BinaryNumber> trustedAnoIds)
+            : base(remotePeerEP, renegotiateAfterBytesSent, renegotiateAfterSeconds)
         {
             _supportedCiphers = supportedCiphers;
             _options = options;
             _preSharedKey = preSharedKey;
+            _anoId = anoId;
             _privateKey = privateKey;
+            _trustedAnoIds = trustedAnoIds;
 
             Start(stream);
         }
@@ -68,8 +73,8 @@ namespace AnoCore.Network.SecureChannel
 
                 switch (serverHello.Version)
                 {
-                    case 5:
-                        ProtocolV5(bufferedStream, serverHello, clientHello);
+                    case 1:
+                        ProtocolV1(bufferedStream, serverHello, clientHello);
                         break;
 
                     default:
@@ -130,7 +135,7 @@ namespace AnoCore.Network.SecureChannel
             }
         }
 
-        private void ProtocolV5(WriteBufferedStream bufferedStream, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
+        private void ProtocolV1(WriteBufferedStream bufferedStream, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
         {
             #region 1. hello handshake check
 
@@ -191,19 +196,21 @@ namespace AnoCore.Network.SecureChannel
                     if (_options.HasFlag(SecureChannelOptions.CLIENT_AUTHENTICATION_REQUIRED))
                     {
                         //write client auth
-                        new SecureChannelHandshakeAuthentication(clientKeyExchange, serverHello, clientHello, _privateKey).WriteTo(this);
+                        new SecureChannelHandshakeAuthentication(clientKeyExchange, serverHello, clientHello, _anoId, _privateKey).WriteTo(this);
                         this.Flush();
                     }
 
                     //read server auth
                     SecureChannelHandshakeAuthentication serverAuth = new SecureChannelHandshakeAuthentication(this);
+                    _remotePeerAnoId = serverAuth.AnoId;
 
                     //authenticate server
-                    if (!serverAuth.IsPublicKeyValid(_remotePeerAnoId))
-                        throw new SecureChannelException(SecureChannelCode.InvalidPeerPublicKey, _remotePeerEP, _remotePeerAnoId);
-
                     if (!serverAuth.IsSignatureValid(serverKeyExchange, serverHello, clientHello))
                         throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
+
+                    //check if server is trusted
+                    if (!serverAuth.IsTrustedAnoId(_trustedAnoIds))
+                        throw new SecureChannelException(SecureChannelCode.UntrustedRemotePeerAnoId, _remotePeerEP, _remotePeerAnoId);
 
                     break;
 

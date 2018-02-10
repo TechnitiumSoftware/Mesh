@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 using System;
 using System.IO;
 using System.Net;
+using TechnitiumLibrary.IO;
 
 namespace AnoCore.Network.SecureChannel
 {
@@ -31,9 +32,9 @@ namespace AnoCore.Network.SecureChannel
         NoMatchingCipherAvailable = 3,
         NoMatchingOptionsAvailable = 4,
         PskAuthenticationFailed = 5,
-        InvalidPeerPublicKey = 6,
-        PeerAuthenticationFailed = 7,
-        InvalidMessageHMACReceived = 8,
+        PeerAuthenticationFailed = 6,
+        UntrustedRemotePeerAnoId = 7,
+        MessageAuthenticationFailed = 8,
         RenegotiationFailed = 9,
         UnknownException = 254,
     }
@@ -45,20 +46,20 @@ namespace AnoCore.Network.SecureChannel
 
         SecureChannelCode _code;
         IPEndPoint _peerEP;
-        string _peerAnoId;
+        BinaryNumber _peerAnoId;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, string peerAnoId)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerAnoId)
         {
             _code = code;
             _peerEP = peerEP;
             _peerAnoId = peerAnoId;
         }
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, string peerAnoId, string message)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerAnoId, string message)
             : base(message)
         {
             _code = code;
@@ -66,7 +67,7 @@ namespace AnoCore.Network.SecureChannel
             _peerAnoId = peerAnoId;
         }
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, string peerAnoId, string message, Exception innerException)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerAnoId, string message, Exception innerException)
             : base(message, innerException)
         {
             _code = code;
@@ -88,7 +89,7 @@ namespace AnoCore.Network.SecureChannel
         public IPEndPoint PeerEP
         { get { return _peerEP; } }
 
-        public string PeerAnoId
+        public BinaryNumber PeerAnoId
         { get { return _peerAnoId; } }
 
         #endregion

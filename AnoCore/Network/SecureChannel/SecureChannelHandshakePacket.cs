@@ -18,6 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using TechnitiumLibrary.IO;
@@ -87,7 +88,7 @@ namespace AnoCore.Network.SecureChannel
         public SecureChannelHandshakeHello(SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options)
             : base(SecureChannelCode.None)
         {
-            _version = 5;
+            _version = 1;
             _nonce = BinaryNumber.GenerateRandomNumber256();
             _supportedCiphers = supportedCiphers;
             _options = options;
@@ -103,7 +104,7 @@ namespace AnoCore.Network.SecureChannel
                 case -1:
                     throw new EndOfStreamException();
 
-                case 5:
+                case 1:
                     _version = (byte)version;
                     _nonce = new BinaryNumber(s);
                     _supportedCiphers = (SecureChannelCipherSuite)s.ReadByte();
@@ -166,7 +167,7 @@ namespace AnoCore.Network.SecureChannel
             _ephemeralPublicKey = keyAgreement.GetPublicKey();
 
             if (serverHello.Options.HasFlag(SecureChannelOptions.PRE_SHARED_KEY_AUTHENTICATION_REQUIRED))
-                _pskAuth = GetPskAuthValue(serverHello.SupportedCiphers, _ephemeralPublicKey, serverHello.Nonce.Number, clientHello.Nonce.Number, psk);
+                _pskAuth = GetPskAuthValue(serverHello.SupportedCiphers, _ephemeralPublicKey, serverHello.Nonce.Value, clientHello.Nonce.Value, psk);
             else
                 _pskAuth = new BinaryNumber(new byte[] { });
         }
@@ -219,7 +220,7 @@ namespace AnoCore.Network.SecureChannel
 
         public bool IsPskAuthValid(SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, byte[] psk)
         {
-            BinaryNumber generatedPskAuthValue = GetPskAuthValue(serverHello.SupportedCiphers, _ephemeralPublicKey, serverHello.Nonce.Number, clientHello.Nonce.Number, psk);
+            BinaryNumber generatedPskAuthValue = GetPskAuthValue(serverHello.SupportedCiphers, _ephemeralPublicKey, serverHello.Nonce.Value, clientHello.Nonce.Value, psk);
 
             return _pskAuth.Equals(generatedPskAuthValue);
         }
@@ -248,6 +249,7 @@ namespace AnoCore.Network.SecureChannel
     {
         #region variables
 
+        readonly BinaryNumber _anoId;
         readonly byte[] _publicKey;
         readonly byte[] _signature;
 
@@ -255,12 +257,14 @@ namespace AnoCore.Network.SecureChannel
 
         #region constructor
 
-        public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, byte[] privateKey)
+        public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, BinaryNumber anoId, byte[] privateKey)
             : base(SecureChannelCode.None)
         {
             switch (serverHello.SupportedCiphers)
             {
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                    _anoId = anoId;
+
                     using (RSA rsa = RSA.Create())
                     {
                         RSAParameters rsaPrivateKey = DEREncoding.DecodeRSAPrivateKey(privateKey);
@@ -271,11 +275,14 @@ namespace AnoCore.Network.SecureChannel
 
                         _publicKey = DEREncoding.EncodeRSAPublicKey(rsaPrivateKey);
 
+                        if (!SecureChannelStream.IsAnoIdValid(_anoId, _publicKey))
+                            throw new ArgumentException("AnoId does not match with public key.");
+
                         using (MemoryStream mS = new MemoryStream())
                         {
                             mS.Write(keyExchange.EphemeralPublicKey, 0, keyExchange.EphemeralPublicKey.Length);
-                            mS.Write(serverHello.Nonce.Number, 0, serverHello.Nonce.Number.Length);
-                            mS.Write(clientHello.Nonce.Number, 0, clientHello.Nonce.Number.Length);
+                            mS.Write(serverHello.Nonce.Value, 0, serverHello.Nonce.Value.Length);
+                            mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
                             mS.Position = 0;
 
                             _signature = rsa.SignData(mS, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -291,6 +298,8 @@ namespace AnoCore.Network.SecureChannel
         public SecureChannelHandshakeAuthentication(Stream s)
             : base(s)
         {
+            _anoId = new BinaryNumber(s);
+
             byte[] buffer = new byte[2];
 
             OffsetStream.StreamRead(s, buffer, 0, 2);
@@ -306,13 +315,22 @@ namespace AnoCore.Network.SecureChannel
 
         #region public
 
-        public bool IsPublicKeyValid(string remotePeerAnoId)
+        public bool IsTrustedAnoId(IEnumerable<BinaryNumber> trustedAnoIds)
         {
-            return AnoProfile.IsAnoIdValid(remotePeerAnoId, _publicKey);
+            foreach (BinaryNumber trustedAnoId in trustedAnoIds)
+            {
+                if (trustedAnoId == _anoId)
+                    return true;
+            }
+
+            return false;
         }
 
         public bool IsSignatureValid(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
         {
+            if (!SecureChannelStream.IsAnoIdValid(_anoId, _publicKey))
+                return false;
+
             switch (serverHello.SupportedCiphers)
             {
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
@@ -327,8 +345,8 @@ namespace AnoCore.Network.SecureChannel
                         using (MemoryStream mS = new MemoryStream())
                         {
                             mS.Write(keyExchange.EphemeralPublicKey, 0, keyExchange.EphemeralPublicKey.Length);
-                            mS.Write(serverHello.Nonce.Number, 0, serverHello.Nonce.Number.Length);
-                            mS.Write(clientHello.Nonce.Number, 0, clientHello.Nonce.Number.Length);
+                            mS.Write(serverHello.Nonce.Value, 0, serverHello.Nonce.Value.Length);
+                            mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
                             mS.Position = 0;
 
                             return rsa.VerifyData(mS, _signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -344,6 +362,8 @@ namespace AnoCore.Network.SecureChannel
         {
             base.WriteTo(s);
 
+            _anoId.WriteTo(s);
+
             s.Write(BitConverter.GetBytes(Convert.ToUInt16(_publicKey.Length)), 0, 2);
             s.Write(_publicKey, 0, _publicKey.Length);
 
@@ -354,6 +374,9 @@ namespace AnoCore.Network.SecureChannel
         #endregion
 
         #region properties
+
+        public BinaryNumber AnoId
+        { get { return _anoId; } }
 
         public byte[] PublicKey
         { get { return _publicKey; } }
