@@ -1,0 +1,759 @@
+﻿/*
+Technitium Ano
+Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using System.Threading;
+using TechnitiumLibrary.IO;
+using TechnitiumLibrary.Net;
+using TechnitiumLibrary.Net.Proxy;
+
+namespace AnoCore.Network.DHT
+{
+    public class DhtManager : IDisposable
+    {
+        #region variables
+
+        const string DHT_BOOTSTRAP_URL = "https://ano.im/dht.bin";
+
+        const int WRITE_BUFFERED_STREAM_SIZE = 128;
+
+        const int SOCKET_CONNECTION_TIMEOUT = 2000;
+        const int SOCKET_SEND_TIMEOUT = 5000;
+        const int SOCKET_RECV_TIMEOUT = 5000;
+
+        const int NETWORK_WATCHER_INTERVAL = 15000;
+
+        const int ANNOUNCEMENT_INTERVAL = 60000;
+        const int ANNOUNCEMENT_RETRY_INTERVAL = 2000;
+        const int ANNOUNCEMENT_RETRY_COUNT = 3;
+
+        const int BUFFER_MAX_SIZE = 32;
+
+        const string IPV6_MULTICAST_IP = "FF12::1";
+
+        readonly int _announcePort;
+
+        readonly Timer _networkWatcher;
+        readonly List<NetworkInfo> _networks = new List<NetworkInfo>();
+        readonly List<LocalNetworkDhtManager> _localNetworkDhtManagers = new List<LocalNetworkDhtManager>();
+
+        readonly DhtNode _ipv4InternetDhtNode;
+        readonly DhtNode _ipv6InternetDhtNode;
+
+        #endregion
+
+        #region constructor
+
+        public DhtManager(int announcePort, IDhtConnectionManager connectionManager, IEnumerable<IPEndPoint> ipv4BootstrapNodes, IEnumerable<IPEndPoint> ipv6BootstrapNodes, NetProxy proxy, bool enableLocalNetworkDht)
+        {
+            _announcePort = announcePort;
+
+            //init internet dht nodes
+            _ipv4InternetDhtNode = new DhtNode(connectionManager, true);
+            _ipv6InternetDhtNode = new DhtNode(connectionManager, true);
+
+            //add known bootstrap nodes
+            _ipv4InternetDhtNode.AddNode(ipv4BootstrapNodes);
+            _ipv6InternetDhtNode.AddNode(ipv6BootstrapNodes);
+
+            //add bootstrap nodes via web
+            ThreadPool.QueueUserWorkItem(delegate (object state)
+            {
+                try
+                {
+                    using (WebClientEx wC = new WebClientEx())
+                    {
+                        wC.Proxy = proxy;
+
+                        using (MemoryStream mS = new MemoryStream(wC.DownloadData(DHT_BOOTSTRAP_URL)))
+                        {
+                            int count = mS.ReadByte();
+
+                            for (int i = 0; i < count; i++)
+                            {
+                                IPEndPoint nodeEP = IPEndPointParser.Parse(mS);
+
+                                switch (nodeEP.AddressFamily)
+                                {
+                                    case AddressFamily.InterNetwork:
+                                        _ipv4InternetDhtNode.AddNode(nodeEP);
+                                        break;
+
+                                    case AddressFamily.InterNetworkV6:
+                                        _ipv6InternetDhtNode.AddNode(nodeEP);
+                                        break;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                { }
+            });
+
+            if (enableLocalNetworkDht)
+            {
+                //start network watcher
+                _networkWatcher = new Timer(NetworkWatcherAsync, null, 1000, Timeout.Infinite);
+            }
+        }
+
+        #endregion
+
+        #region IDisposable
+
+        bool _disposed = false;
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                if (_networkWatcher != null)
+                    _networkWatcher.Dispose();
+
+                lock (_localNetworkDhtManagers)
+                {
+                    foreach (LocalNetworkDhtManager localNetworkDhtManager in _localNetworkDhtManagers)
+                        localNetworkDhtManager.Dispose();
+
+                    _localNetworkDhtManagers.Clear();
+                }
+
+                if (_ipv4InternetDhtNode != null)
+                    _ipv4InternetDhtNode.Dispose();
+
+                if (_ipv6InternetDhtNode != null)
+                    _ipv6InternetDhtNode.Dispose();
+
+                _disposed = true;
+            }
+        }
+
+        #endregion
+
+        #region private
+
+        private void NetworkWatcherAsync(object state)
+        {
+            try
+            {
+                bool networkChanged = false;
+                List<NetworkInfo> newNetworks = new List<NetworkInfo>();
+
+                {
+                    List<NetworkInfo> currentNetworks = NetUtilities.GetNetworkInfo();
+
+                    networkChanged = (currentNetworks.Count != _networks.Count);
+
+                    foreach (NetworkInfo currentNetwork in currentNetworks)
+                    {
+                        if (!_networks.Contains(currentNetwork))
+                        {
+                            networkChanged = true;
+                            newNetworks.Add(currentNetwork);
+                        }
+                    }
+
+                    _networks.Clear();
+                    _networks.AddRange(currentNetworks);
+                }
+
+                if (networkChanged)
+                {
+                    lock (_localNetworkDhtManagers)
+                    {
+                        //remove local network dht manager with offline networks
+                        {
+                            List<LocalNetworkDhtManager> localNetworkDhtManagersToRemove = new List<LocalNetworkDhtManager>();
+
+                            foreach (LocalNetworkDhtManager localNetworkDhtManager in _localNetworkDhtManagers)
+                            {
+                                if (!_networks.Contains(localNetworkDhtManager.Network))
+                                    localNetworkDhtManagersToRemove.Add(localNetworkDhtManager);
+                            }
+
+                            foreach (LocalNetworkDhtManager localNetworkDhtManager in localNetworkDhtManagersToRemove)
+                            {
+                                localNetworkDhtManager.Dispose();
+                                _localNetworkDhtManagers.Remove(localNetworkDhtManager);
+                            }
+                        }
+
+                        //add local network dht managers for new online networks
+                        if (newNetworks.Count > 0)
+                        {
+                            foreach (NetworkInfo network in _networks)
+                            {
+                                if (IPAddress.IsLoopback(network.LocalIP))
+                                    continue; //skip loopback networks
+
+                                _localNetworkDhtManagers.Add(new LocalNetworkDhtManager(_announcePort, network));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            { }
+            finally
+            {
+                if (!_disposed)
+                    _networkWatcher.Change(NETWORK_WATCHER_INTERVAL, Timeout.Infinite);
+            }
+        }
+
+        #endregion
+
+        #region public
+
+        public void AcceptInternetDhtConnection(Stream s, IPAddress remoteNodeIP)
+        {
+            switch (remoteNodeIP.AddressFamily)
+            {
+                case AddressFamily.InterNetwork:
+                    _ipv4InternetDhtNode.AcceptConnection(s, remoteNodeIP);
+                    break;
+
+                case AddressFamily.InterNetworkV6:
+                    _ipv6InternetDhtNode.AcceptConnection(s, remoteNodeIP);
+                    break;
+
+                default:
+                    throw new NotSupportedException("AddressFamily not supported.");
+            }
+        }
+
+        public void FindPeers(BinaryNumber networkId, Action<PeerEndPoint[]> callback)
+        {
+            {
+                Thread t = new Thread(delegate (object state)
+                {
+                    try
+                    {
+                        PeerEndPoint[] peers = _ipv4InternetDhtNode.FindPeers(networkId);
+                        if ((peers != null) && (peers.Length > 0))
+                            callback(peers);
+                    }
+                    catch
+                    { }
+                });
+
+                t.IsBackground = true;
+                t.Start();
+            }
+
+            {
+                Thread t = new Thread(delegate (object state)
+                {
+                    try
+                    {
+                        PeerEndPoint[] peers = _ipv6InternetDhtNode.FindPeers(networkId);
+                        if ((peers != null) && (peers.Length > 0))
+                            callback(peers);
+                    }
+                    catch
+                    { }
+                });
+
+                t.IsBackground = true;
+                t.Start();
+            }
+
+            lock (_localNetworkDhtManagers)
+            {
+                foreach (LocalNetworkDhtManager localNetworkDhtManager in _localNetworkDhtManagers)
+                {
+                    Thread t = new Thread(delegate (object state)
+                    {
+                        try
+                        {
+                            PeerEndPoint[] peers = localNetworkDhtManager.DhtNode.FindPeers(networkId);
+                            if ((peers != null) && (peers.Length > 0))
+                                callback(peers);
+                        }
+                        catch
+                        { }
+                    });
+
+                    t.IsBackground = true;
+                    t.Start();
+                }
+            }
+        }
+
+        public void Announce(BinaryNumber networkId, PeerEndPoint serviceEP, Action<PeerEndPoint[]> callback)
+        {
+            //{
+            //    Thread t = new Thread(delegate (object state)
+            //    {
+            //        try
+            //        {
+            //            PeerEndPoint[] peers = _ipv4InternetDhtNode.Announce(networkId, serviceEP);
+            //            if ((peers != null) && (peers.Length > 0))
+            //                callback(peers);
+            //        }
+            //        catch
+            //        { }
+            //    });
+
+            //    t.IsBackground = true;
+            //    t.Start();
+            //}
+
+            //{
+            //    Thread t = new Thread(delegate (object state)
+            //    {
+            //        try
+            //        {
+            //            PeerEndPoint[] peers = _ipv6InternetDhtNode.Announce(networkId, serviceEP);
+            //            if ((peers != null) && (peers.Length > 0))
+            //                callback(peers);
+            //        }
+            //        catch
+            //        { }
+            //    });
+
+            //    t.IsBackground = true;
+            //    t.Start();
+            //}
+
+            lock (_localNetworkDhtManagers)
+            {
+                foreach (LocalNetworkDhtManager localNetworkDhtManager in _localNetworkDhtManagers)
+                {
+                    Thread t = new Thread(delegate (object state)
+                    {
+                        try
+                        {
+                            PeerEndPoint[] peers = localNetworkDhtManager.DhtNode.Announce(networkId, serviceEP);
+                            if ((peers != null) && (peers.Length > 0))
+                                callback(peers);
+                        }
+                        catch
+                        { }
+                    });
+
+                    t.IsBackground = true;
+                    t.Start();
+                }
+            }
+        }
+
+        #endregion
+
+        class LocalNetworkDhtManager : IDhtConnectionManager, IDisposable
+        {
+            #region variables
+
+            readonly int _announcePort;
+            readonly NetworkInfo _network;
+
+            readonly Socket _udpListener;
+            readonly Thread _udpListenerThread;
+
+            readonly Socket _tcpListener;
+            readonly Thread _tcpListenerThread;
+
+            readonly IPEndPoint _dhtEndPoint;
+            readonly DhtNode _dhtNode;
+
+            readonly Timer _announceTimer;
+
+            #endregion
+
+            #region constructor
+
+            public LocalNetworkDhtManager(int announcePort, NetworkInfo network)
+            {
+                _announcePort = announcePort;
+                _network = network;
+
+                //start udp & tcp listeners
+                switch (_network.LocalIP.AddressFamily)
+                {
+                    case AddressFamily.InterNetwork:
+                        _udpListener = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                        _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                        break;
+
+                    case AddressFamily.InterNetworkV6:
+                        _udpListener = new Socket(AddressFamily.InterNetworkV6, SocketType.Dgram, ProtocolType.Udp);
+                        _tcpListener = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
+
+                        if ((Environment.OSVersion.Platform == PlatformID.Win32NT) && (Environment.OSVersion.Version.Major >= 6))
+                        {
+                            //windows vista & above
+                            _udpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+                            _tcpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+                        }
+                        break;
+
+                    default:
+                        throw new NotSupportedException("Address family not supported.");
+                }
+
+                _udpListener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Broadcast, true);
+                _udpListener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+
+                _udpListener.Bind(new IPEndPoint(_network.LocalIP, announcePort));
+
+                _tcpListener.Bind(new IPEndPoint(_network.LocalIP, 0));
+                _tcpListener.Listen(10);
+
+                _dhtEndPoint = _tcpListener.LocalEndPoint as IPEndPoint;
+
+                //init dht node
+                _dhtNode = new DhtNode(this, false);
+
+                if (_udpListener.AddressFamily == AddressFamily.InterNetworkV6)
+                {
+                    NetworkInterface nic = _network.Interface;
+                    if ((nic.OperationalStatus == OperationalStatus.Up) && (nic.Supports(NetworkInterfaceComponent.IPv6)) && nic.SupportsMulticast)
+                    {
+                        try
+                        {
+                            _udpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.AddMembership, new IPv6MulticastOption(IPAddress.Parse(IPV6_MULTICAST_IP), nic.GetIPProperties().GetIPv6Properties().Index));
+                        }
+                        catch
+                        { }
+                    }
+                }
+
+                //start reading packets
+                _udpListenerThread = new Thread(RecvDataAsync);
+                _udpListenerThread.IsBackground = true;
+                _udpListenerThread.Start();
+
+                //start accepting connections
+                _tcpListenerThread = new Thread(AcceptTcpConnectionAsync);
+                _tcpListenerThread.IsBackground = true;
+                _tcpListenerThread.Start();
+
+                //announce async
+                _announceTimer = new Timer(AnnounceAsync, null, 1000, Timeout.Infinite);
+            }
+
+            #endregion
+
+            #region IDisposable
+
+            bool _disposed = false;
+
+            public void Dispose()
+            {
+                if (!_disposed)
+                {
+                    if (_udpListener != null)
+                        _udpListener.Dispose();
+
+                    if (_tcpListener != null)
+                        _tcpListener.Dispose();
+
+                    if (_dhtNode != null)
+                        _dhtNode.Dispose();
+
+                    if (_announceTimer != null)
+                        _announceTimer.Dispose();
+
+                    _disposed = true;
+                }
+            }
+
+            #endregion
+
+            #region private
+
+            private void RecvDataAsync(object parameter)
+            {
+                EndPoint remoteEP = null;
+                FixMemoryStream dataRecv = new FixMemoryStream(BUFFER_MAX_SIZE);
+                int bytesRecv;
+
+                if (_udpListener.AddressFamily == AddressFamily.InterNetwork)
+                    remoteEP = new IPEndPoint(IPAddress.Any, 0);
+                else
+                    remoteEP = new IPEndPoint(IPAddress.IPv6Any, 0);
+
+                #region this code ignores ICMP port unreachable responses which creates SocketException in ReceiveFrom()
+
+                if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                {
+                    const uint IOC_IN = 0x80000000;
+                    const uint IOC_VENDOR = 0x18000000;
+                    const uint SIO_UDP_CONNRESET = IOC_IN | IOC_VENDOR | 12;
+
+                    _udpListener.IOControl((IOControlCode)SIO_UDP_CONNRESET, new byte[] { Convert.ToByte(false) }, null);
+                }
+
+                #endregion
+
+                try
+                {
+                    while (true)
+                    {
+                        //receive message from remote
+                        bytesRecv = _udpListener.ReceiveFrom(dataRecv.Buffer, ref remoteEP);
+
+                        if (bytesRecv > 0)
+                        {
+                            IPAddress remoteNodeIP = (remoteEP as IPEndPoint).Address;
+
+                            if (NetUtilities.IsIPv4MappedIPv6Address(remoteNodeIP))
+                                remoteNodeIP = NetUtilities.ConvertFromIPv4MappedIPv6Address(remoteNodeIP);
+
+                            dataRecv.Position = 0;
+                            dataRecv.SetLength(bytesRecv);
+
+                            try
+                            {
+                                DhtNodeDiscoveryPacket packet = new DhtNodeDiscoveryPacket(dataRecv);
+
+                                if (!remoteNodeIP.Equals(_network.LocalIP) || (_dhtEndPoint.Port != packet.DhtPort))
+                                {
+                                    //add node
+                                    _dhtNode.AddNode(new IPEndPoint(remoteNodeIP, packet.DhtPort));
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.Write("DhtManager.LocalNetworkDhtManager.RecvDataAsync", ex);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.Write("DhtManager.LocalNetworkDhtManager.RecvDataAsync", ex);
+                }
+            }
+
+            private void AcceptTcpConnectionAsync(object parameter)
+            {
+                try
+                {
+                    while (true)
+                    {
+                        Socket socket = _tcpListener.Accept();
+
+                        socket.NoDelay = true;
+                        socket.SendTimeout = SOCKET_SEND_TIMEOUT;
+                        socket.ReceiveTimeout = SOCKET_RECV_TIMEOUT;
+
+                        Thread t = new Thread(delegate (object state)
+                        {
+                            Socket clientSocket = state as Socket;
+
+                            try
+                            {
+                                using (Stream s = new WriteBufferedStream(new NetworkStream(clientSocket, true), WRITE_BUFFERED_STREAM_SIZE))
+                                {
+                                    IPEndPoint remoteNodeEP = clientSocket.RemoteEndPoint as IPEndPoint;
+
+                                    if (NetUtilities.IsIPv4MappedIPv6Address(remoteNodeEP.Address))
+                                        remoteNodeEP = new IPEndPoint(NetUtilities.ConvertFromIPv4MappedIPv6Address(remoteNodeEP.Address), remoteNodeEP.Port);
+
+                                    _dhtNode.AcceptConnection(s, remoteNodeEP.Address);
+                                }
+                            }
+                            catch
+                            {
+                                clientSocket.Dispose();
+                            }
+                        });
+
+                        t.IsBackground = true;
+                        t.Start(socket);
+                    }
+                }
+                catch
+                { }
+            }
+
+            private void Broadcast(byte[] buffer, int offset, int count)
+            {
+                if (_network.LocalIP.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    IPAddress broadcastIP = _network.BroadcastIP;
+
+                    if (_udpListener.AddressFamily == AddressFamily.InterNetworkV6)
+                        broadcastIP = NetUtilities.ConvertToIPv4MappedIPv6Address(broadcastIP);
+
+                    try
+                    {
+                        _udpListener.SendTo(buffer, offset, count, SocketFlags.None, new IPEndPoint(broadcastIP, _announcePort));
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.Write("DhtManager.LocalNetworkDhtManager.BroadcastTo", ex);
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        _udpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.MulticastInterface, _network.Interface.GetIPProperties().GetIPv6Properties().Index);
+                        _udpListener.SendTo(buffer, offset, count, SocketFlags.None, new IPEndPoint(IPAddress.Parse(IPV6_MULTICAST_IP), _announcePort));
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.Write("DhtManager.LocalNetworkDhtManager.BroadcastTo", ex);
+                    }
+                }
+            }
+
+            private void AnnounceAsync(object state)
+            {
+                try
+                {
+                    byte[] announcement = (new DhtNodeDiscoveryPacket((ushort)_dhtEndPoint.Port)).ToArray();
+
+                    for (int i = 0; i < ANNOUNCEMENT_RETRY_COUNT; i++)
+                    {
+                        Broadcast(announcement, 0, announcement.Length);
+
+                        if (i < ANNOUNCEMENT_RETRY_COUNT - 1)
+                            Thread.Sleep(ANNOUNCEMENT_RETRY_INTERVAL);
+                    }
+                }
+                catch
+                { }
+                finally
+                {
+                    if (!_disposed)
+                    {
+                        if (_dhtNode.TotalNodes < 2)
+                            _announceTimer.Change(ANNOUNCEMENT_INTERVAL, Timeout.Infinite);
+                    }
+                }
+            }
+
+            #endregion
+
+            #region IDhtConnectionManager support
+
+            Stream IDhtConnectionManager.GetConnection(IPEndPoint remoteNodeEP)
+            {
+                Socket socket = null;
+
+                try
+                {
+                    socket = new Socket(remoteNodeEP.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+                    IAsyncResult result = socket.BeginConnect(remoteNodeEP, null, null);
+                    if (!result.AsyncWaitHandle.WaitOne(SOCKET_CONNECTION_TIMEOUT))
+                        throw new SocketException((int)SocketError.TimedOut);
+
+                    if (!socket.Connected)
+                        throw new SocketException((int)SocketError.ConnectionRefused);
+
+                    socket.NoDelay = true;
+                    socket.SendTimeout = SOCKET_SEND_TIMEOUT;
+                    socket.ReceiveTimeout = SOCKET_RECV_TIMEOUT;
+
+                    return new WriteBufferedStream(new NetworkStream(socket, true), WRITE_BUFFERED_STREAM_SIZE);
+                }
+                catch
+                {
+                    if (socket != null)
+                        socket.Dispose();
+
+                    throw;
+                }
+            }
+
+            IPEndPoint IDhtConnectionManager.NodeEndPoint
+            { get { return _dhtEndPoint; } }
+
+            #endregion
+
+            #region properties
+
+            public NetworkInfo Network
+            { get { return _network; } }
+
+            public DhtNode DhtNode
+            { get { return _dhtNode; } }
+
+            #endregion
+        }
+
+        class DhtNodeDiscoveryPacket
+        {
+            #region variables
+
+            readonly ushort _dhtPort;
+
+            #endregion
+
+            #region constructor
+
+            public DhtNodeDiscoveryPacket(ushort dhtPort)
+            {
+                _dhtPort = dhtPort;
+            }
+
+            public DhtNodeDiscoveryPacket(Stream s)
+            {
+                switch (s.ReadByte()) //version
+                {
+                    case 1:
+                        byte[] buffer = new byte[2];
+                        OffsetStream.StreamRead(s, buffer, 0, 2);
+                        _dhtPort = BitConverter.ToUInt16(buffer, 0);
+                        break;
+
+                    case -1:
+                        throw new EndOfStreamException();
+
+                    default:
+                        throw new IOException("DHT node discovery packet version not supported.");
+                }
+            }
+
+            #endregion
+
+            #region public
+
+            public byte[] ToArray()
+            {
+                byte[] buffer = new byte[3];
+
+                buffer[0] = 1; //version
+                Buffer.BlockCopy(BitConverter.GetBytes(_dhtPort), 0, buffer, 1, 2); //service port
+
+                return buffer;
+            }
+
+            #endregion
+
+            #region properties
+
+            public ushort DhtPort
+            { get { return _dhtPort; } }
+
+            #endregion
+        }
+    }
+}
