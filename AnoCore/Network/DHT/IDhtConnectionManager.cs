@@ -22,8 +22,9 @@ using System.Net;
 
 namespace AnoCore.Network.DHT
 {
-    interface IDhtNodeManager
+    public interface IDhtConnectionManager
     {
+        IPEndPoint NodeEndPoint { get; }
         Stream GetConnection(IPEndPoint remoteNodeEP);
     }
 }

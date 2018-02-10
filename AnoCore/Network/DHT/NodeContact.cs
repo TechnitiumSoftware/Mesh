@@ -36,7 +36,7 @@ namespace AnoCore.Network.DHT
         static readonly byte[] NODE_ID_SALT = new byte[] { 0xF4, 0xC7, 0x56, 0x9A, 0xA3, 0xAD, 0xC9, 0xA7, 0x13, 0x0E, 0xCA, 0x56, 0x56, 0xA3, 0x52, 0x8F, 0xFE, 0x6E, 0x9C, 0x72 };
 
         readonly IPEndPoint _nodeEP;
-        readonly BinaryNumber _nodeID;
+        readonly BinaryNumber _nodeId;
 
         protected bool _currentNode;
         DateTime _lastSeen;
@@ -50,25 +50,26 @@ namespace AnoCore.Network.DHT
         public NodeContact(Stream s)
         {
             _nodeEP = IPEndPointParser.Parse(s);
-            _nodeID = GetNodeID(_nodeEP);
+            _nodeId = GetNodeId(_nodeEP);
         }
 
         public NodeContact(IPEndPoint nodeEP)
         {
             _nodeEP = nodeEP;
-            _nodeID = GetNodeID(_nodeEP);
+            _nodeId = GetNodeId(_nodeEP);
         }
 
-        protected NodeContact()
+        protected NodeContact(BinaryNumber nodeId, IPEndPoint nodeEP)
         {
-            _nodeID = BinaryNumber.GenerateRandomNumber160();
+            _nodeId = nodeId;
+            _nodeEP = nodeEP;
         }
 
         #endregion
 
         #region static
 
-        public static BinaryNumber GetNodeID(IPEndPoint nodeEP)
+        private static BinaryNumber GetNodeId(IPEndPoint nodeEP)
         {
             using (HMAC hmac = new HMACSHA1(NODE_ID_SALT))
             {
@@ -113,17 +114,25 @@ namespace AnoCore.Network.DHT
 
         public override bool Equals(object obj)
         {
-            NodeContact contact = obj as NodeContact;
+            if (obj is null)
+                return false;
 
+            if (ReferenceEquals(this, obj))
+                return true;
+
+            NodeContact contact = obj as NodeContact;
             if (contact == null)
                 return false;
 
-            return Equals(_nodeID, contact._nodeID);
+            if (_nodeEP.Equals(contact._nodeEP))
+                return true;
+
+            return _nodeId.Equals(contact._nodeId);
         }
 
         public override int GetHashCode()
         {
-            return _nodeID.GetHashCode();
+            return _nodeId.GetHashCode();
         }
 
         public override string ToString()
@@ -138,8 +147,8 @@ namespace AnoCore.Network.DHT
         public IPEndPoint NodeEP
         { get { return _nodeEP; } }
 
-        public BinaryNumber NodeID
-        { get { return _nodeID; } }
+        public BinaryNumber NodeId
+        { get { return _nodeId; } }
 
         public bool IsCurrentNode
         { get { return _currentNode; } }

@@ -70,14 +70,14 @@ namespace AnoCore.Network.DHT
                 _bucketID = new BinaryNumber(new byte[20]);
 
                 if (left)
-                    _bucketID.Number[0] = 0x80;
+                    _bucketID.Value[0] = 0x80;
             }
             else
             {
                 if (left)
                 {
                     _bucketID = new BinaryNumber(new byte[20]);
-                    _bucketID.Number[0] = 0x80;
+                    _bucketID.Value[0] = 0x80;
 
                     _bucketID = parentBucket._bucketID | (_bucketID >> (_bucketDepth - 1));
                 }
@@ -104,7 +104,7 @@ namespace AnoCore.Network.DHT
 
             foreach (NodeContact contact in contacts)
             {
-                BinaryNumber distance = nodeID ^ contact.NodeID;
+                BinaryNumber distance = nodeID ^ contact.NodeId;
 
                 for (int i = 0; i < count; i++)
                 {
@@ -140,7 +140,7 @@ namespace AnoCore.Network.DHT
             {
                 if (contact != null)
                 {
-                    if ((leftBucket._bucketID & contact.NodeID) == leftBucket._bucketID)
+                    if ((leftBucket._bucketID & contact.NodeId) == leftBucket._bucketID)
                         leftBucket._contacts[leftBucket._contactCount++] = contact;
                     else
                         rightBucket._contacts[rightBucket._contactCount++] = contact;
@@ -149,7 +149,7 @@ namespace AnoCore.Network.DHT
 
             KBucket selectedBucket;
 
-            if ((leftBucket._bucketID & newContact.NodeID) == leftBucket._bucketID)
+            if ((leftBucket._bucketID & newContact.NodeId) == leftBucket._bucketID)
                 selectedBucket = leftBucket;
             else
                 selectedBucket = rightBucket;
@@ -313,7 +313,7 @@ namespace AnoCore.Network.DHT
                     }
                 }
 
-                if ((leftBucket._bucketID & contact.NodeID) == leftBucket._bucketID)
+                if ((leftBucket._bucketID & contact.NodeId) == leftBucket._bucketID)
                     currentBucket = leftBucket;
                 else
                     currentBucket = rightBucket;
@@ -385,7 +385,7 @@ namespace AnoCore.Network.DHT
                     }
                 }
 
-                if ((leftBucket._bucketID & contact.NodeID) == leftBucket._bucketID)
+                if ((leftBucket._bucketID & contact.NodeId) == leftBucket._bucketID)
                     currentBucket = leftBucket;
                 else
                     currentBucket = rightBucket;
@@ -468,7 +468,7 @@ namespace AnoCore.Network.DHT
                     {
                         if (contact != null)
                         {
-                            if ((includeStaleContacts || !contact.IsStale()) && !contact.IsCurrentNode)
+                            if (includeStaleContacts || !contact.IsStale())
                                 allContacts.Add(contact);
                         }
                     }
@@ -492,7 +492,7 @@ namespace AnoCore.Network.DHT
                 {
                     foreach (NodeContact contact in contacts)
                     {
-                        if ((contact != null) && contact.NodeID.Equals(nodeID))
+                        if ((contact != null) && contact.NodeId.Equals(nodeID))
                             return contact;
                     }
 

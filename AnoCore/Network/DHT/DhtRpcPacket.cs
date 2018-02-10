@@ -41,7 +41,6 @@ namespace AnoCore.Network.DHT
         readonly BinaryNumber _networkId;
         readonly NodeContact[] _contacts;
         readonly PeerEndPoint[] _peers;
-        readonly ushort _servicePort;
 
         #endregion
 
@@ -56,7 +55,7 @@ namespace AnoCore.Network.DHT
                 case -1:
                     throw new EndOfStreamException();
 
-                case 2:
+                case 1:
                     byte[] buffer = new byte[20];
 
                     OffsetStream.StreamRead(s, buffer, 0, 2);
@@ -106,9 +105,6 @@ namespace AnoCore.Network.DHT
                                 OffsetStream.StreamRead(s, buffer, 0, 20);
                                 _networkId = BinaryNumber.Clone(buffer, 0, 20);
 
-                                OffsetStream.StreamRead(s, buffer, 0, 2);
-                                _servicePort = BitConverter.ToUInt16(buffer, 0);
-
                                 int count = s.ReadByte();
                                 _peers = new PeerEndPoint[count];
 
@@ -128,7 +124,7 @@ namespace AnoCore.Network.DHT
             }
         }
 
-        private DhtRpcPacket(ushort sourceNodePort, DhtRpcType type, BinaryNumber networkId, NodeContact[] contacts, PeerEndPoint[] peers, ushort servicePort)
+        private DhtRpcPacket(ushort sourceNodePort, DhtRpcType type, BinaryNumber networkId, NodeContact[] contacts, PeerEndPoint[] peers)
         {
             _sourceNodePort = sourceNodePort;
             _type = type;
@@ -136,7 +132,6 @@ namespace AnoCore.Network.DHT
             _networkId = networkId;
             _contacts = contacts;
             _peers = peers;
-            _servicePort = servicePort;
         }
 
         #endregion
@@ -145,37 +140,37 @@ namespace AnoCore.Network.DHT
 
         public static DhtRpcPacket CreatePingPacket(NodeContact sourceNode)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.PING, null, null, null, 0);
+            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.PING, null, null, null);
         }
 
         public static DhtRpcPacket CreateFindNodePacketQuery(NodeContact sourceNode, BinaryNumber networkId)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_NODE, networkId, null, null, 0);
+            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_NODE, networkId, null, null);
         }
 
         public static DhtRpcPacket CreateFindNodePacketResponse(NodeContact sourceNode, BinaryNumber networkId, NodeContact[] contacts)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_NODE, networkId, contacts, null, 0);
+            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_NODE, networkId, contacts, null);
         }
 
         public static DhtRpcPacket CreateFindPeersPacketQuery(NodeContact sourceNode, BinaryNumber networkId)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_PEERS, networkId, null, null, 0);
+            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_PEERS, networkId, null, null);
         }
 
         public static DhtRpcPacket CreateFindPeersPacketResponse(NodeContact sourceNode, BinaryNumber networkId, NodeContact[] contacts, PeerEndPoint[] peers)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_PEERS, networkId, contacts, peers, 0);
+            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_PEERS, networkId, contacts, peers);
         }
 
-        public static DhtRpcPacket CreateAnnouncePeerPacketQuery(NodeContact sourceNode, BinaryNumber networkId, ushort servicePort)
+        public static DhtRpcPacket CreateAnnouncePeerPacketQuery(NodeContact sourceNode, BinaryNumber networkId, PeerEndPoint peer)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.ANNOUNCE_PEER, networkId, null, null, servicePort);
+            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.ANNOUNCE_PEER, networkId, null, new PeerEndPoint[] { peer });
         }
 
         public static DhtRpcPacket CreateAnnouncePeerPacketResponse(NodeContact sourceNode, BinaryNumber networkId, PeerEndPoint[] peers)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.ANNOUNCE_PEER, networkId, null, peers, 0);
+            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.ANNOUNCE_PEER, networkId, null, peers);
         }
 
         #endregion
@@ -184,14 +179,14 @@ namespace AnoCore.Network.DHT
 
         public void WriteTo(Stream s)
         {
-            s.WriteByte(2); //version
+            s.WriteByte(1); //version
             s.Write(BitConverter.GetBytes(_sourceNodePort), 0, 2); //source node port
             s.WriteByte((byte)_type); //type
 
             switch (_type)
             {
                 case DhtRpcType.FIND_NODE:
-                    s.Write(_networkId.Number, 0, 20);
+                    s.Write(_networkId.Value, 0, 20);
 
                     if (_contacts == null)
                     {
@@ -208,7 +203,7 @@ namespace AnoCore.Network.DHT
                     break;
 
                 case DhtRpcType.FIND_PEERS:
-                    s.Write(_networkId.Number, 0, 20);
+                    s.Write(_networkId.Value, 0, 20);
 
                     if (_contacts == null)
                     {
@@ -236,9 +231,7 @@ namespace AnoCore.Network.DHT
                     break;
 
                 case DhtRpcType.ANNOUNCE_PEER:
-                    s.Write(_networkId.Number, 0, 20);
-
-                    s.Write(BitConverter.GetBytes(_servicePort), 0, 2);
+                    s.Write(_networkId.Value, 0, 20);
 
                     if (_peers == null)
                     {
@@ -273,9 +266,6 @@ namespace AnoCore.Network.DHT
 
         public PeerEndPoint[] Peers
         { get { return _peers; } }
-
-        public ushort ServicePort
-        { get { return _servicePort; } }
 
         #endregion
     }

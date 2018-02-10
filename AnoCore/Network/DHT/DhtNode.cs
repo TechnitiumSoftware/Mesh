@@ -59,23 +59,27 @@ namespace AnoCore.Network.DHT
         const int HEALTH_CHECK_TIMER_INTERVAL = 15 * 60 * 1000; //15 min
         const int KADEMLIA_ALPHA = 3;
 
-        readonly IDhtNodeManager _manager;
+        readonly IDhtConnectionManager _manager;
 
-        CurrentNode _currentNode;
-        KBucket _routingTable;
+        readonly CurrentNode _currentNode;
+        readonly KBucket _routingTable;
 
-        Timer _healthTimer;
+        readonly Timer _healthTimer;
 
         #endregion
 
         #region constructor
 
-        public DhtNode(IDhtNodeManager manager)
+        public DhtNode(IDhtConnectionManager manager, bool isInternetNode)
         {
             _manager = manager;
 
+            if (isInternetNode)
+                _currentNode = new CurrentNode(BinaryNumber.GenerateRandomNumber160(), manager.NodeEndPoint);
+            else
+                _currentNode = new CurrentNode(manager.NodeEndPoint);
+
             //init routing table
-            _currentNode = new CurrentNode();
             _routingTable = new KBucket(_currentNode);
 
             //start health timer
@@ -86,26 +90,14 @@ namespace AnoCore.Network.DHT
 
         #region IDisposable
 
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
         bool _disposed = false;
 
-        private void Dispose(bool disposing)
+        public void Dispose()
         {
             if (!_disposed)
             {
-                if (disposing)
-                {
-                    if (_healthTimer != null)
-                    {
-                        _healthTimer.Dispose();
-                        _healthTimer = null;
-                    }
-                }
+                if (_healthTimer != null)
+                    _healthTimer.Dispose();
 
                 _disposed = true;
             }
@@ -129,16 +121,16 @@ namespace AnoCore.Network.DHT
                 _routingTable.RefreshBucket(this);
 
                 //find closest contacts for current node id
-                NodeContact[] initialContacts = _routingTable.GetKClosestContacts(_currentNode.NodeID);
+                NodeContact[] initialContacts = _routingTable.GetKClosestContacts(_currentNode.NodeId);
 
                 if (initialContacts.Length > 0)
-                    QueryFindNode(initialContacts, _currentNode.NodeID); //query manager auto add contacts that respond
+                    QueryFindNode(initialContacts, _currentNode.NodeId); //query manager auto add contacts that respond
             }
             catch
             { }
             finally
             {
-                if (_healthTimer != null)
+                if (!_disposed)
                     _healthTimer.Change(HEALTH_CHECK_TIMER_INTERVAL, Timeout.Infinite);
             }
         }
@@ -163,7 +155,20 @@ namespace AnoCore.Network.DHT
                         return DhtRpcPacket.CreateFindPeersPacketResponse(_currentNode, query.NetworkID, new NodeContact[] { }, peers);
 
                 case DhtRpcType.ANNOUNCE_PEER:
-                    _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(remoteNodeIP, query.ServicePort));
+                    if ((query.Peers != null) && (query.Peers.Length > 0))
+                    {
+                        switch (query.Peers[0].Type)
+                        {
+                            case PeerEndPointType.IPEndPoint:
+                                _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(query.Peers[0].AnoId, new IPEndPoint(remoteNodeIP, query.Peers[0].IPEndPoint.Port)));
+                                break;
+
+                            case PeerEndPointType.TorAddress:
+                                _currentNode.StorePeer(query.NetworkID, query.Peers[0]);
+                                break;
+                        }
+                    }
+
                     return DhtRpcPacket.CreateAnnouncePeerPacketResponse(_currentNode, query.NetworkID, _currentNode.GetPeers(query.NetworkID));
 
                 default:
@@ -177,9 +182,10 @@ namespace AnoCore.Network.DHT
 
             try
             {
+                if (contact.IsCurrentNode)
+                    return ProcessQuery(query, contact.NodeEP.Address);
+
                 s = _manager.GetConnection(contact.NodeEP);
-                if (s == null)
-                    return null;
 
                 //set timeout
                 s.WriteTimeout = QUERY_TIMEOUT;
@@ -194,7 +200,7 @@ namespace AnoCore.Network.DHT
 
                 //auto add contact or update last seen time
                 {
-                    NodeContact bucketContact = _routingTable.FindContact(contact.NodeID);
+                    NodeContact bucketContact = _routingTable.FindContact(contact.NodeId);
 
                     if (bucketContact == null)
                     {
@@ -227,7 +233,7 @@ namespace AnoCore.Network.DHT
             return (response != null);
         }
 
-        private object QueryFind(NodeContact[] initialContacts, BinaryNumber nodeID, DhtRpcType queryType)
+        private object QueryFind(NodeContact[] initialContacts, BinaryNumber nodeId, DhtRpcType queryType)
         {
             if (initialContacts.Length < 1)
                 return null;
@@ -243,7 +249,7 @@ namespace AnoCore.Network.DHT
             if (queryType == DhtRpcType.FIND_PEERS)
                 receivedPeers = new List<PeerEndPoint>();
 
-            NodeContact previousClosestSeenContact = KBucket.SelectClosestContacts(seenContacts, nodeID, 1)[0];
+            NodeContact previousClosestSeenContact = KBucket.SelectClosestContacts(seenContacts, nodeId, 1)[0];
 
             while (true)
             {
@@ -252,7 +258,7 @@ namespace AnoCore.Network.DHT
                 //pick alpha contacts to query from learned contacts
                 lock (learnedNotQueriedContacts)
                 {
-                    alphaContacts = KBucket.SelectClosestContacts(learnedNotQueriedContacts, nodeID, alpha);
+                    alphaContacts = KBucket.SelectClosestContacts(learnedNotQueriedContacts, nodeId, alpha);
 
                     //remove selected alpha contacts from learned not queries contacts list
                     foreach (NodeContact alphaContact in alphaContacts)
@@ -277,9 +283,9 @@ namespace AnoCore.Network.DHT
                                 DhtRpcPacket response;
 
                                 if (queryType == DhtRpcType.FIND_NODE)
-                                    response = Query(DhtRpcPacket.CreateFindNodePacketQuery(_currentNode, nodeID), alphaContact);
+                                    response = Query(DhtRpcPacket.CreateFindNodePacketQuery(_currentNode, nodeId), alphaContact);
                                 else
-                                    response = Query(DhtRpcPacket.CreateFindPeersPacketQuery(_currentNode, nodeID), alphaContact);
+                                    response = Query(DhtRpcPacket.CreateFindPeersPacketQuery(_currentNode, nodeId), alphaContact);
 
                                 if ((response == null) || (response.Type != queryType))
                                 {
@@ -349,11 +355,11 @@ namespace AnoCore.Network.DHT
 
                             lock (seenContacts)
                             {
-                                currentClosestSeenContact = KBucket.SelectClosestContacts(seenContacts, nodeID, 1)[0];
+                                currentClosestSeenContact = KBucket.SelectClosestContacts(seenContacts, nodeId, 1)[0];
                             }
 
-                            BinaryNumber previousDistance = nodeID ^ previousClosestSeenContact.NodeID;
-                            BinaryNumber currentDistance = nodeID ^ currentClosestSeenContact.NodeID;
+                            BinaryNumber previousDistance = nodeId ^ previousClosestSeenContact.NodeId;
+                            BinaryNumber currentDistance = nodeId ^ currentClosestSeenContact.NodeId;
 
                             if (previousDistance <= currentDistance)
                             {
@@ -402,7 +408,7 @@ namespace AnoCore.Network.DHT
 
                     lock (seenContacts)
                     {
-                        kClosestSeenContacts = KBucket.SelectClosestContacts(seenContacts, nodeID, KADEMLIA_K);
+                        kClosestSeenContacts = KBucket.SelectClosestContacts(seenContacts, nodeId, KADEMLIA_K);
                     }
 
                     lock (respondedContacts)
@@ -422,15 +428,15 @@ namespace AnoCore.Network.DHT
                             return kClosestSeenContacts;
 
                         if (alphaContacts.Length < 1)
-                            return KBucket.SelectClosestContacts(respondedContacts, nodeID, KADEMLIA_K);
+                            return KBucket.SelectClosestContacts(respondedContacts, nodeId, KADEMLIA_K);
                     }
                 }
             }
         }
 
-        internal NodeContact[] QueryFindNode(NodeContact[] initialContacts, BinaryNumber nodeID)
+        internal NodeContact[] QueryFindNode(NodeContact[] initialContacts, BinaryNumber nodeId)
         {
-            object contacts = QueryFind(initialContacts, nodeID, DhtRpcType.FIND_NODE);
+            object contacts = QueryFind(initialContacts, nodeId, DhtRpcType.FIND_NODE);
 
             if (contacts == null)
                 return null;
@@ -448,7 +454,7 @@ namespace AnoCore.Network.DHT
             return peers as PeerEndPoint[];
         }
 
-        private PeerEndPoint[] QueryAnnounce(NodeContact[] initialContacts, BinaryNumber networkId, ushort servicePort)
+        private PeerEndPoint[] QueryAnnounce(NodeContact[] initialContacts, BinaryNumber networkId, PeerEndPoint serviceEP)
         {
             NodeContact[] contacts = QueryFindNode(initialContacts, networkId);
 
@@ -463,7 +469,7 @@ namespace AnoCore.Network.DHT
                 {
                     Thread t = new Thread(delegate (object state)
                     {
-                        DhtRpcPacket response = Query(DhtRpcPacket.CreateAnnouncePeerPacketQuery(_currentNode, networkId, servicePort), contact);
+                        DhtRpcPacket response = Query(DhtRpcPacket.CreateAnnouncePeerPacketQuery(_currentNode, networkId, serviceEP), contact);
                         if ((response != null) && (response.Type == DhtRpcType.ANNOUNCE_PEER) && (response.Peers.Length > 0))
                         {
                             lock (peers)
@@ -539,7 +545,7 @@ namespace AnoCore.Network.DHT
             }
         }
 
-        public IPEndPoint[] FindPeers(BinaryNumber networkId)
+        public PeerEndPoint[] FindPeers(BinaryNumber networkId)
         {
             NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId);
 
@@ -549,14 +555,14 @@ namespace AnoCore.Network.DHT
             return QueryFindPeers(initialContacts, networkId);
         }
 
-        public IPEndPoint[] Announce(BinaryNumber networkId, int servicePort)
+        public PeerEndPoint[] Announce(BinaryNumber networkId, PeerEndPoint serviceEP)
         {
             NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId);
 
             if (initialContacts.Length < 1)
                 return null;
 
-            return QueryAnnounce(initialContacts, networkId, Convert.ToUInt16(servicePort));
+            return QueryAnnounce(initialContacts, networkId, serviceEP);
         }
 
         public IPEndPoint[] GetAllNodeEPs(bool includeStaleContacts)
@@ -592,7 +598,7 @@ namespace AnoCore.Network.DHT
         #region properties
 
         public BinaryNumber LocalNodeID
-        { get { return _currentNode.NodeID; } }
+        { get { return _currentNode.NodeId; } }
 
         public int TotalNodes
         { get { return _routingTable.TotalContacts; } }
@@ -611,7 +617,14 @@ namespace AnoCore.Network.DHT
 
             #region constructor
 
-            public CurrentNode()
+            public CurrentNode(IPEndPoint nodeEP)
+                : base(nodeEP)
+            {
+                _currentNode = true;
+            }
+
+            public CurrentNode(BinaryNumber nodeId, IPEndPoint nodeEP)
+                : base(nodeId, nodeEP)
             {
                 _currentNode = true;
             }
@@ -622,10 +635,10 @@ namespace AnoCore.Network.DHT
 
             public void StorePeer(BinaryNumber networkId, PeerEndPoint peerEP)
             {
+                List<PeerEndPoint> peerList;
+
                 lock (_data)
                 {
-                    List<PeerEndPoint> peerList;
-
                     if (_data.ContainsKey(networkId))
                     {
                         peerList = _data[networkId];
@@ -635,7 +648,10 @@ namespace AnoCore.Network.DHT
                         peerList = new List<PeerEndPoint>();
                         _data.Add(networkId, peerList);
                     }
+                }
 
+                lock (peerList)
+                {
                     foreach (PeerEndPoint peer in peerList)
                     {
                         if (peer.Equals(peerEP))
@@ -651,32 +667,37 @@ namespace AnoCore.Network.DHT
 
             public PeerEndPoint[] GetPeers(BinaryNumber networkId)
             {
+                List<PeerEndPoint> peers;
+
                 lock (_data)
                 {
                     if (_data.ContainsKey(networkId))
                     {
-                        List<PeerEndPoint> peers = _data[networkId];
-
-                        if (peers.Count > MAX_PEERS_TO_RETURN)
-                        {
-                            List<PeerEndPoint> finalPeers = new List<PeerEndPoint>(peers);
-                            Random rnd = new Random(DateTime.UtcNow.Millisecond);
-
-                            while (finalPeers.Count > MAX_PEERS_TO_RETURN)
-                            {
-                                finalPeers.RemoveAt(rnd.Next(finalPeers.Count - 1));
-                            }
-
-                            return finalPeers.ToArray();
-                        }
-                        else
-                        {
-                            return _data[networkId].ToArray();
-                        }
+                        peers = _data[networkId];
                     }
                     else
                     {
                         return new PeerEndPoint[] { };
+                    }
+                }
+
+                lock (peers)
+                {
+                    if (peers.Count > MAX_PEERS_TO_RETURN)
+                    {
+                        List<PeerEndPoint> finalPeers = new List<PeerEndPoint>(peers);
+                        Random rnd = new Random(DateTime.UtcNow.Millisecond);
+
+                        while (finalPeers.Count > MAX_PEERS_TO_RETURN)
+                        {
+                            finalPeers.RemoveAt(rnd.Next(finalPeers.Count - 1));
+                        }
+
+                        return finalPeers.ToArray();
+                    }
+                    else
+                    {
+                        return _data[networkId].ToArray();
                     }
                 }
             }
