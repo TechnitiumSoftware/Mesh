@@ -47,7 +47,7 @@ FEATURES-
 <=======================================================================================>
                                                 version +
                                                 client nonce +
-                                                supported ciphers
+                                                supported ciphers +
                                           <---  options
                                version +  ---> 
                           server nonce +  
@@ -63,7 +63,7 @@ FEATURES-
                                                   client ephemeral public key + 
                                                   server nonce + client nonce, PSK)
 <---------------------------------------------------------------------------------------> key exchange + PSK auth done
-          master key = HMACSHA256(server hello + client hello, derived key)
+          master key = HMACSHA256(server nonce + client nonce, derived key)
 <---------------------------------------------------------------------------------------> encryption layer ON
                                                 (optional client authentication)
                                                 meshId +
@@ -640,8 +640,8 @@ namespace MeshCore.Network.SecureChannel
         {
             using (MemoryStream mS = new MemoryStream(128))
             {
-                serverHello.WriteTo(mS);
-                clientHello.WriteTo(mS);
+                mS.Write(serverHello.Nonce.Value, 0, serverHello.Nonce.Value.Length);
+                mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
 
                 keyAgreement.HmacMessage = mS.ToArray();
             }
