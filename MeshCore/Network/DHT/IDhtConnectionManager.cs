@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 using System.IO;
 using System.Net;
 
-namespace AnoCore.Network.DHT
+namespace MeshCore.Network.DHT
 {
     public interface IDhtConnectionManager
     {

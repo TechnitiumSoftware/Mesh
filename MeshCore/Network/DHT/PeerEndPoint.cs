@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -24,7 +24,7 @@ using System.Text;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 
-namespace AnoCore.Network.DHT
+namespace MeshCore.Network.DHT
 {
     public enum PeerEndPointType : byte
     {
@@ -38,7 +38,7 @@ namespace AnoCore.Network.DHT
 
         const int PEER_EXPIRY_TIME_SECONDS = 900; //15 min expiry
 
-        BinaryNumber _anoId;
+        BinaryNumber _meshId;
         PeerEndPointType _type;
         IPEndPoint _ep;
         string _torAddress;
@@ -49,30 +49,30 @@ namespace AnoCore.Network.DHT
 
         #region constructor
 
-        public PeerEndPoint(BinaryNumber anoId, IPEndPoint ep)
+        public PeerEndPoint(BinaryNumber meshId, IPEndPoint ep)
         {
-            _anoId = anoId;
+            _meshId = meshId;
             _type = PeerEndPointType.IPEndPoint;
             _ep = ep;
         }
 
-        public PeerEndPoint(BinaryNumber anoId, int servicePort)
+        public PeerEndPoint(BinaryNumber meshId, int servicePort)
         {
-            _anoId = anoId;
+            _meshId = meshId;
             _type = PeerEndPointType.IPEndPoint;
             _ep = new IPEndPoint(IPAddress.Any, servicePort);
         }
 
-        public PeerEndPoint(BinaryNumber anoId, string torAddress)
+        public PeerEndPoint(BinaryNumber meshId, string torAddress)
         {
-            _anoId = anoId;
+            _meshId = meshId;
             _type = PeerEndPointType.TorAddress;
             _torAddress = torAddress;
         }
 
         public PeerEndPoint(Stream s)
         {
-            _anoId = new BinaryNumber(s);
+            _meshId = new BinaryNumber(s);
 
             int type = s.ReadByte();
             if (type < 0)
@@ -120,7 +120,7 @@ namespace AnoCore.Network.DHT
 
         public void WriteTo(Stream s)
         {
-            _anoId.WriteTo(s);
+            _meshId.WriteTo(s);
 
             s.WriteByte((byte)_type);
 
@@ -153,7 +153,7 @@ namespace AnoCore.Network.DHT
             if (other == null)
                 return false;
 
-            if (_anoId != other._anoId)
+            if (_meshId != other._meshId)
                 return false;
 
             if (_type != other._type)
@@ -179,15 +179,15 @@ namespace AnoCore.Network.DHT
 
         public override int GetHashCode()
         {
-            return _anoId.GetHashCode();
+            return _meshId.GetHashCode();
         }
 
         #endregion
 
         #region properties
 
-        public BinaryNumber AnoId
-        { get { return _anoId; } }
+        public BinaryNumber MeshId
+        { get { return _meshId; } }
 
         public PeerEndPointType Type
         { get { return _type; } }

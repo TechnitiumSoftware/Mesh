@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@ using TechnitiumLibrary.Security.Cryptography;
 *  
 */
 
-namespace AnoCore.Network.SecureChannel
+namespace MeshCore.Network.SecureChannel
 {
     public class SecureChannelHandshakePacket
     {
@@ -249,7 +249,7 @@ namespace AnoCore.Network.SecureChannel
     {
         #region variables
 
-        readonly BinaryNumber _anoId;
+        readonly BinaryNumber _meshId;
         readonly byte[] _publicKey;
         readonly byte[] _signature;
 
@@ -257,13 +257,13 @@ namespace AnoCore.Network.SecureChannel
 
         #region constructor
 
-        public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, BinaryNumber anoId, byte[] privateKey)
+        public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, BinaryNumber meshId, byte[] privateKey)
             : base(SecureChannelCode.None)
         {
             switch (serverHello.SupportedCiphers)
             {
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
-                    _anoId = anoId;
+                    _meshId = meshId;
 
                     using (RSA rsa = RSA.Create())
                     {
@@ -275,8 +275,8 @@ namespace AnoCore.Network.SecureChannel
 
                         _publicKey = DEREncoding.EncodeRSAPublicKey(rsaPrivateKey);
 
-                        if (!SecureChannelStream.IsAnoIdValid(_anoId, _publicKey))
-                            throw new ArgumentException("AnoId does not match with public key.");
+                        if (!SecureChannelStream.IsMeshIdValid(_meshId, _publicKey))
+                            throw new ArgumentException("MeshId does not match with public key.");
 
                         using (MemoryStream mS = new MemoryStream())
                         {
@@ -298,7 +298,7 @@ namespace AnoCore.Network.SecureChannel
         public SecureChannelHandshakeAuthentication(Stream s)
             : base(s)
         {
-            _anoId = new BinaryNumber(s);
+            _meshId = new BinaryNumber(s);
 
             byte[] buffer = new byte[2];
 
@@ -315,11 +315,11 @@ namespace AnoCore.Network.SecureChannel
 
         #region public
 
-        public bool IsTrustedAnoId(IEnumerable<BinaryNumber> trustedAnoIds)
+        public bool IsTrustedMeshId(IEnumerable<BinaryNumber> trustedMeshIds)
         {
-            foreach (BinaryNumber trustedAnoId in trustedAnoIds)
+            foreach (BinaryNumber trustedMeshId in trustedMeshIds)
             {
-                if (trustedAnoId == _anoId)
+                if (trustedMeshId == _meshId)
                     return true;
             }
 
@@ -328,7 +328,7 @@ namespace AnoCore.Network.SecureChannel
 
         public bool IsSignatureValid(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
         {
-            if (!SecureChannelStream.IsAnoIdValid(_anoId, _publicKey))
+            if (!SecureChannelStream.IsMeshIdValid(_meshId, _publicKey))
                 return false;
 
             switch (serverHello.SupportedCiphers)
@@ -362,7 +362,7 @@ namespace AnoCore.Network.SecureChannel
         {
             base.WriteTo(s);
 
-            _anoId.WriteTo(s);
+            _meshId.WriteTo(s);
 
             s.Write(BitConverter.GetBytes(Convert.ToUInt16(_publicKey.Length)), 0, 2);
             s.Write(_publicKey, 0, _publicKey.Length);
@@ -375,8 +375,8 @@ namespace AnoCore.Network.SecureChannel
 
         #region properties
 
-        public BinaryNumber AnoId
-        { get { return _anoId; } }
+        public BinaryNumber MeshId
+        { get { return _meshId; } }
 
         public byte[] PublicKey
         { get { return _publicKey; } }

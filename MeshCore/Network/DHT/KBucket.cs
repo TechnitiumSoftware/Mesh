@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -22,7 +22,7 @@ using System.Collections.Generic;
 using System.Threading;
 using TechnitiumLibrary.IO;
 
-namespace AnoCore.Network.DHT
+namespace MeshCore.Network.DHT
 {
     class KBucket
     {

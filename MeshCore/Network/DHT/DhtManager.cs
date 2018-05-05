@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -28,13 +28,13 @@ using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 using TechnitiumLibrary.Net.Proxy;
 
-namespace AnoCore.Network.DHT
+namespace MeshCore.Network.DHT
 {
     public class DhtManager : IDisposable
     {
         #region variables
 
-        const string DHT_BOOTSTRAP_URL = "https://ano.im/dht.bin";
+        const string DHT_BOOTSTRAP_URL = "https://mesh.im/dht.bin";
 
         const int WRITE_BUFFERED_STREAM_SIZE = 128;
 
@@ -305,39 +305,39 @@ namespace AnoCore.Network.DHT
 
         public void Announce(BinaryNumber networkId, PeerEndPoint serviceEP, Action<PeerEndPoint[]> callback)
         {
-            //{
-            //    Thread t = new Thread(delegate (object state)
-            //    {
-            //        try
-            //        {
-            //            PeerEndPoint[] peers = _ipv4InternetDhtNode.Announce(networkId, serviceEP);
-            //            if ((peers != null) && (peers.Length > 0))
-            //                callback(peers);
-            //        }
-            //        catch
-            //        { }
-            //    });
+            {
+                Thread t = new Thread(delegate (object state)
+                {
+                    try
+                    {
+                        PeerEndPoint[] peers = _ipv4InternetDhtNode.Announce(networkId, serviceEP);
+                        if ((callback != null) && (peers != null) && (peers.Length > 0))
+                            callback(peers);
+                    }
+                    catch
+                    { }
+                });
 
-            //    t.IsBackground = true;
-            //    t.Start();
-            //}
+                t.IsBackground = true;
+                t.Start();
+            }
 
-            //{
-            //    Thread t = new Thread(delegate (object state)
-            //    {
-            //        try
-            //        {
-            //            PeerEndPoint[] peers = _ipv6InternetDhtNode.Announce(networkId, serviceEP);
-            //            if ((peers != null) && (peers.Length > 0))
-            //                callback(peers);
-            //        }
-            //        catch
-            //        { }
-            //    });
+            {
+                Thread t = new Thread(delegate (object state)
+                {
+                    try
+                    {
+                        PeerEndPoint[] peers = _ipv6InternetDhtNode.Announce(networkId, serviceEP);
+                        if ((callback != null) && (peers != null) && (peers.Length > 0))
+                            callback(peers);
+                    }
+                    catch
+                    { }
+                });
 
-            //    t.IsBackground = true;
-            //    t.Start();
-            //}
+                t.IsBackground = true;
+                t.Start();
+            }
 
             lock (_localNetworkDhtManagers)
             {
@@ -348,7 +348,7 @@ namespace AnoCore.Network.DHT
                         try
                         {
                             PeerEndPoint[] peers = localNetworkDhtManager.DhtNode.Announce(networkId, serviceEP);
-                            if ((peers != null) && (peers.Length > 0))
+                            if ((callback != null) && (peers != null) && (peers.Length > 0))
                                 callback(peers);
                         }
                         catch

@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -23,7 +23,7 @@ using System.Net;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Security.Cryptography;
 
-namespace AnoCore.Network.SecureChannel
+namespace MeshCore.Network.SecureChannel
 {
     public class SecureChannelClientStream : SecureChannelStream
     {
@@ -32,23 +32,23 @@ namespace AnoCore.Network.SecureChannel
         readonly SecureChannelCipherSuite _supportedCiphers;
         readonly SecureChannelOptions _options;
         readonly byte[] _preSharedKey;
-        readonly BinaryNumber _anoId;
+        readonly BinaryNumber _meshId;
         readonly byte[] _privateKey;
-        IEnumerable<BinaryNumber> _trustedAnoIds;
+        IEnumerable<BinaryNumber> _trustedMeshIds;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelClientStream(Stream stream, IPEndPoint remotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, BinaryNumber anoId, byte[] privateKey, IEnumerable<BinaryNumber> trustedAnoIds)
+        public SecureChannelClientStream(Stream stream, IPEndPoint remotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, BinaryNumber meshId, byte[] privateKey, IEnumerable<BinaryNumber> trustedMeshIds)
             : base(remotePeerEP, renegotiateAfterBytesSent, renegotiateAfterSeconds)
         {
             _supportedCiphers = supportedCiphers;
             _options = options;
             _preSharedKey = preSharedKey;
-            _anoId = anoId;
+            _meshId = meshId;
             _privateKey = privateKey;
-            _trustedAnoIds = trustedAnoIds;
+            _trustedMeshIds = trustedMeshIds;
 
             Start(stream);
         }
@@ -78,14 +78,14 @@ namespace AnoCore.Network.SecureChannel
                         break;
 
                     default:
-                        throw new SecureChannelException(SecureChannelCode.ProtocolVersionNotSupported, _remotePeerEP, _remotePeerAnoId, "SecureChannel protocol version not supported: " + serverHello.Version);
+                        throw new SecureChannelException(SecureChannelCode.ProtocolVersionNotSupported, _remotePeerEP, _remotePeerMeshId, "SecureChannel protocol version not supported: " + serverHello.Version);
                 }
             }
             catch (SecureChannelException ex)
             {
                 if (ex.Code == SecureChannelCode.RemoteError)
                 {
-                    throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerAnoId, ex.Message, ex);
+                    throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerMeshId, ex.Message, ex);
                 }
                 else
                 {
@@ -105,7 +105,7 @@ namespace AnoCore.Network.SecureChannel
                     { }
 
                     if (ex.PeerEP == null)
-                        throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerAnoId, ex.Message, ex);
+                        throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerMeshId, ex.Message, ex);
 
                     throw;
                 }
@@ -143,11 +143,11 @@ namespace AnoCore.Network.SecureChannel
             _selectedCipher = _supportedCiphers & serverHello.SupportedCiphers;
 
             if (_selectedCipher == SecureChannelCipherSuite.None)
-                throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerAnoId);
+                throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
 
             //match options
             if (_options != serverHello.Options)
-                throw new SecureChannelException(SecureChannelCode.NoMatchingOptionsAvailable, _remotePeerEP, _remotePeerAnoId);
+                throw new SecureChannelException(SecureChannelCode.NoMatchingOptionsAvailable, _remotePeerEP, _remotePeerMeshId);
 
             #endregion
 
@@ -159,7 +159,7 @@ namespace AnoCore.Network.SecureChannel
             if (_options.HasFlag(SecureChannelOptions.PRE_SHARED_KEY_AUTHENTICATION_REQUIRED))
             {
                 if (!serverKeyExchange.IsPskAuthValid(serverHello, clientHello, _preSharedKey))
-                    throw new SecureChannelException(SecureChannelCode.PskAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
+                    throw new SecureChannelException(SecureChannelCode.PskAuthenticationFailed, _remotePeerEP, _remotePeerMeshId);
             }
 
             KeyAgreement keyAgreement;
@@ -172,7 +172,7 @@ namespace AnoCore.Network.SecureChannel
                     break;
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerAnoId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
             }
 
             //write client key exchange data
@@ -188,7 +188,7 @@ namespace AnoCore.Network.SecureChannel
 
             #endregion
 
-            #region 4. AnoId based authentication
+            #region 4. MeshId based authentication
 
             switch (_selectedCipher)
             {
@@ -196,21 +196,21 @@ namespace AnoCore.Network.SecureChannel
                     if (_options.HasFlag(SecureChannelOptions.CLIENT_AUTHENTICATION_REQUIRED))
                     {
                         //write client auth
-                        new SecureChannelHandshakeAuthentication(clientKeyExchange, serverHello, clientHello, _anoId, _privateKey).WriteTo(this);
+                        new SecureChannelHandshakeAuthentication(clientKeyExchange, serverHello, clientHello, _meshId, _privateKey).WriteTo(this);
                         this.Flush();
                     }
 
                     //read server auth
                     SecureChannelHandshakeAuthentication serverAuth = new SecureChannelHandshakeAuthentication(this);
-                    _remotePeerAnoId = serverAuth.AnoId;
+                    _remotePeerMeshId = serverAuth.MeshId;
 
                     //authenticate server
                     if (!serverAuth.IsSignatureValid(serverKeyExchange, serverHello, clientHello))
-                        throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
+                        throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, _remotePeerEP, _remotePeerMeshId);
 
                     //check if server is trusted
-                    if (!serverAuth.IsTrustedAnoId(_trustedAnoIds))
-                        throw new SecureChannelException(SecureChannelCode.UntrustedRemotePeerAnoId, _remotePeerEP, _remotePeerAnoId);
+                    if (!serverAuth.IsTrustedMeshId(_trustedMeshIds))
+                        throw new SecureChannelException(SecureChannelCode.UntrustedRemotePeerMeshId, _remotePeerEP, _remotePeerMeshId);
 
                     break;
 
@@ -218,7 +218,7 @@ namespace AnoCore.Network.SecureChannel
                     break; //no auth for ANON
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerAnoId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
             }
 
             #endregion

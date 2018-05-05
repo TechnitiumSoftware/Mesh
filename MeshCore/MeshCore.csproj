@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Folder Include="Network\SecureChannel\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="TechnitiumLibrary.IO">
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.IO.dll</HintPath>
+    </Reference>
+    <Reference Include="TechnitiumLibrary.Net">
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.dll</HintPath>
+    </Reference>
+    <Reference Include="TechnitiumLibrary.Net.Tor">
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.Tor.dll</HintPath>
+    </Reference>
+    <Reference Include="TechnitiumLibrary.Net.UPnP">
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.UPnP.dll</HintPath>
+    </Reference>
+    <Reference Include="TechnitiumLibrary.Security.Cryptography">
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Security.Cryptography.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

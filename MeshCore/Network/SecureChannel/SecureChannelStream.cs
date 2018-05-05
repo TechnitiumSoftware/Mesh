@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -36,10 +36,10 @@ FEATURES-
  - ephemeral keys used for key exchange to provide perfect forward secrecy (PFS).
  - optional pre-shared key based auth to prevent public key disclosure, preventing identity disclosure to active attacker.
  - encrypted public key authentication to prevent identity disclosure to passive sniffing attack.
- - ano id based public key authentication for ensuring identity and prevent MiTM.
+ - mesh id based public key authentication for ensuring identity and prevent MiTM.
  - secure channel data packet authenticated by HMACSHA256(cipher-text) to provide authenticated encryption (AE) in Encrypt-then-MAC (EtM) mode.
  - key auto renegotation feature for allowing the secure channel to remain always on.
- - server only ano id based authentication to allow blog feed services.
+ - server only mesh id based authentication to allow blog feed services.
  - ANON mode to allow open group chat based on only PSK authentication.
  
 <=======================================================================================>
@@ -66,18 +66,18 @@ FEATURES-
           master key = HMACSHA256(server hello + client hello, derived key)
 <---------------------------------------------------------------------------------------> encryption layer ON
                                                 (optional client authentication)
-                                                anoid +
+                                                meshId +
                                                 client public key +
                                                 signature(client ephemeral public key + 
                                                   server nonce + client nonce, 
                                           <---    client public key)
-                                 anoid +  --->
+                                 meshId +  --->
                      server public key +
  signature(server ephemeral public key + 
    server nonce + client nonce, 
    server public key)
-<---------------------------------------------------------------------------------------> do ano id based authentication
-                   match public key with ano id and verify signature
+<---------------------------------------------------------------------------------------> do meshId based authentication
+                   match public key with meshId and verify signature
 <=======================================================================================> handshake complete
                                     data  <-->  data
 <=======================================================================================>
@@ -91,7 +91,7 @@ FEATURES-
    
 */
 
-namespace AnoCore.Network.SecureChannel
+namespace MeshCore.Network.SecureChannel
 {
     public enum SecureChannelCipherSuite : byte
     {
@@ -118,7 +118,7 @@ namespace AnoCore.Network.SecureChannel
         readonly protected static RandomNumberGenerator _rnd = new RNGCryptoServiceProvider();
 
         readonly protected IPEndPoint _remotePeerEP;
-        protected BinaryNumber _remotePeerAnoId;
+        protected BinaryNumber _remotePeerMeshId;
 
         //io & crypto related
         protected Stream _baseStream;
@@ -210,7 +210,7 @@ namespace AnoCore.Network.SecureChannel
 
         #region static
 
-        public static BinaryNumber GenerateAnoId(byte[] publicKey)
+        public static BinaryNumber GenerateMeshId(byte[] publicKey)
         {
             byte[] random = new byte[4];
             _rnd.GetBytes(random);
@@ -230,16 +230,16 @@ namespace AnoCore.Network.SecureChannel
             return new BinaryNumber(buffer);
         }
 
-        public static bool IsAnoIdValid(BinaryNumber anoId, byte[] publicKey)
+        public static bool IsMeshIdValid(BinaryNumber meshId, byte[] publicKey)
         {
-            if (anoId.Value.Length != 24)
+            if (meshId.Value.Length != 24)
                 return false;
 
             byte[] random = new byte[4];
             byte[] hashValue = new byte[20];
 
-            Buffer.BlockCopy(anoId.Value, 0, random, 0, 4);
-            Buffer.BlockCopy(anoId.Value, 4, hashValue, 0, 20);
+            Buffer.BlockCopy(meshId.Value, 0, random, 0, 4);
+            Buffer.BlockCopy(meshId.Value, 4, hashValue, 0, 20);
 
             BinaryNumber generatedHashValue;
 
@@ -401,7 +401,7 @@ namespace AnoCore.Network.SecureChannel
 
                                 //release read lock for allowing renegotiation to take read lock and wait for it to complete
                                 if (!Monitor.Wait(_readLock, ReadTimeout))
-                                    throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerAnoId, "Renegotiation timed out.");
+                                    throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerMeshId, "Renegotiation timed out.");
                             }
                             else
                             {
@@ -574,7 +574,7 @@ namespace AnoCore.Network.SecureChannel
             BinaryNumber computedAuthHMAC = new BinaryNumber(_authHMACDecrypt.ComputeHash(_readEncryptedData, 0, _readBufferPosition));
 
             if (!computedAuthHMAC.Equals(authHMAC))
-                throw new SecureChannelException(SecureChannelCode.MessageAuthenticationFailed, _remotePeerEP, _remotePeerAnoId);
+                throw new SecureChannelException(SecureChannelCode.MessageAuthenticationFailed, _remotePeerEP, _remotePeerMeshId);
 
             _readBufferPosition = 3;
 
@@ -617,7 +617,7 @@ namespace AnoCore.Network.SecureChannel
 
                     //wait till other party responds with a return RENEGOTIATE packet
                     if (!Monitor.Wait(_renegotiationLock, ReadTimeout))
-                        throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerAnoId, "Renegotiation timed out.");
+                        throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerMeshId, "Renegotiation timed out.");
 
                     lock (_readLock)
                     {
@@ -699,7 +699,7 @@ namespace AnoCore.Network.SecureChannel
                     break;
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerAnoId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
             }
 
             //init variables
@@ -721,8 +721,8 @@ namespace AnoCore.Network.SecureChannel
         public IPEndPoint RemotePeerEP
         { get { return _remotePeerEP; } }
 
-        public BinaryNumber RemotePeerAnoId
-        { get { return _remotePeerAnoId; } }
+        public BinaryNumber RemotePeerMeshId
+        { get { return _remotePeerMeshId; } }
 
         public SecureChannelCipherSuite SelectedCipher
         { get { return _selectedCipher; } }

@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -25,7 +25,7 @@ using System.Threading;
 using TechnitiumLibrary.IO;
 
 /*
- * Kademlia based Distributed Hash Table (DHT) Implementation For Ano
+ * Kademlia based Distributed Hash Table (DHT) Implementation For Mesh
  * ==================================================================
  *
  * FEATURES IMPLEMENTED
@@ -38,7 +38,7 @@ using TechnitiumLibrary.IO;
  * 
  * FEATURES NOT IMPLEMENTED
  * ------------------------
- * 1. Node data republishing. Each peer MUST announce itself within 15 mins to all nodes closer to Ano networkId. This is not feasible due to node having different internal node ID and external perceived node ID.
+ * 1. Node data republishing. Each peer MUST announce itself within 15 mins to all nodes closer to Mesh networkId. This is not feasible due to node having different internal node ID and external perceived node ID.
  * 
  * REFERENCE
  * ---------
@@ -46,7 +46,7 @@ using TechnitiumLibrary.IO;
  * 2. http://www.bittorrent.org/beps/bep_0005.html
 */
 
-namespace AnoCore.Network.DHT
+namespace MeshCore.Network.DHT
 {
     class DhtNode : IDisposable
     {
@@ -160,7 +160,7 @@ namespace AnoCore.Network.DHT
                         switch (query.Peers[0].Type)
                         {
                             case PeerEndPointType.IPEndPoint:
-                                _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(query.Peers[0].AnoId, new IPEndPoint(remoteNodeIP, query.Peers[0].IPEndPoint.Port)));
+                                _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(query.Peers[0].MeshId, new IPEndPoint(remoteNodeIP, query.Peers[0].IPEndPoint.Port)));
                                 break;
 
                             case PeerEndPointType.TorAddress:

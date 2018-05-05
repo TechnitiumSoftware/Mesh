@@ -1,5 +1,5 @@
 ﻿/*
-Technitium Ano
+Technitium Mesh
 Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
@@ -24,7 +24,7 @@ using System.Security.Cryptography;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 
-namespace AnoCore.Network.DHT
+namespace MeshCore.Network.DHT
 {
     class NodeContact : IWriteStream
     {
