@@ -33,7 +33,7 @@ namespace MeshCore.Network.SecureChannel
         NoMatchingOptionsAvailable = 4,
         PskAuthenticationFailed = 5,
         PeerAuthenticationFailed = 6,
-        UntrustedRemotePeerMeshId = 7,
+        UntrustedRemotePeerUserId = 7,
         MessageAuthenticationFailed = 8,
         RenegotiationFailed = 9,
         UnknownException = 254,
@@ -46,33 +46,33 @@ namespace MeshCore.Network.SecureChannel
 
         SecureChannelCode _code;
         IPEndPoint _peerEP;
-        BinaryNumber _peerMeshId;
+        BinaryNumber _peerUserId;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerMeshId)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerUserId)
         {
             _code = code;
             _peerEP = peerEP;
-            _peerMeshId = peerMeshId;
+            _peerUserId = peerUserId;
         }
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerMeshId, string message)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerUserId, string message)
             : base(message)
         {
             _code = code;
             _peerEP = peerEP;
-            _peerMeshId = peerMeshId;
+            _peerUserId = peerUserId;
         }
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerMeshId, string message, Exception innerException)
+        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerUserId, string message, Exception innerException)
             : base(message, innerException)
         {
             _code = code;
             _peerEP = peerEP;
-            _peerMeshId = peerMeshId;
+            _peerUserId = peerUserId;
         }
 
         public SecureChannelException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context)
@@ -89,8 +89,8 @@ namespace MeshCore.Network.SecureChannel
         public IPEndPoint PeerEP
         { get { return _peerEP; } }
 
-        public BinaryNumber PeerMeshId
-        { get { return _peerMeshId; } }
+        public BinaryNumber PeerUserId
+        { get { return _peerUserId; } }
 
         #endregion
     }

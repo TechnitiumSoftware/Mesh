@@ -36,10 +36,10 @@ FEATURES-
  - ephemeral keys used for key exchange to provide perfect forward secrecy (PFS).
  - optional pre-shared key based auth to prevent public key disclosure, preventing identity disclosure to active attacker.
  - encrypted public key authentication to prevent identity disclosure to passive sniffing attack.
- - mesh id based public key authentication for ensuring identity and prevent MiTM.
+ - UserId based public key authentication for ensuring identity and prevent MiTM.
  - secure channel data packet authenticated by HMACSHA256(cipher-text) to provide authenticated encryption (AE) in Encrypt-then-MAC (EtM) mode.
  - key auto renegotation feature for allowing the secure channel to remain always on.
- - server only mesh id based authentication to allow blog feed services.
+ - server only UserId based authentication to allow blog feed services.
  - ANON mode to allow open group chat based on only PSK authentication.
  
 <=======================================================================================>
@@ -66,18 +66,18 @@ FEATURES-
           master key = HMACSHA256(server nonce + client nonce, derived key)
 <---------------------------------------------------------------------------------------> encryption layer ON
                                                 (optional client authentication)
-                                                meshId +
+                                                userId +
                                                 client public key +
                                                 signature(client ephemeral public key + 
                                                   server nonce + client nonce, 
                                           <---    client public key)
-                                 meshId +  --->
+                                 userId +  --->
                      server public key +
  signature(server ephemeral public key + 
    server nonce + client nonce, 
    server public key)
-<---------------------------------------------------------------------------------------> do meshId based authentication
-                   match public key with meshId and verify signature
+<---------------------------------------------------------------------------------------> do userId based authentication
+                   match public key with userId and verify signature
 <=======================================================================================> handshake complete
                                     data  <-->  data
 <=======================================================================================>
@@ -118,7 +118,7 @@ namespace MeshCore.Network.SecureChannel
         readonly protected static RandomNumberGenerator _rnd = new RNGCryptoServiceProvider();
 
         readonly protected IPEndPoint _remotePeerEP;
-        protected BinaryNumber _remotePeerMeshId;
+        protected BinaryNumber _remotePeerUserId;
 
         //io & crypto related
         protected Stream _baseStream;
@@ -210,7 +210,7 @@ namespace MeshCore.Network.SecureChannel
 
         #region static
 
-        public static BinaryNumber GenerateMeshId(byte[] publicKey)
+        public static BinaryNumber GenerateUserId(byte[] publicKey)
         {
             byte[] random = new byte[4];
             _rnd.GetBytes(random);
@@ -230,16 +230,16 @@ namespace MeshCore.Network.SecureChannel
             return new BinaryNumber(buffer);
         }
 
-        public static bool IsMeshIdValid(BinaryNumber meshId, byte[] publicKey)
+        public static bool IsUserIdValid(BinaryNumber userId, byte[] publicKey)
         {
-            if (meshId.Value.Length != 24)
+            if (userId.Value.Length != 24)
                 return false;
 
             byte[] random = new byte[4];
             byte[] hashValue = new byte[20];
 
-            Buffer.BlockCopy(meshId.Value, 0, random, 0, 4);
-            Buffer.BlockCopy(meshId.Value, 4, hashValue, 0, 20);
+            Buffer.BlockCopy(userId.Value, 0, random, 0, 4);
+            Buffer.BlockCopy(userId.Value, 4, hashValue, 0, 20);
 
             BinaryNumber generatedHashValue;
 
@@ -401,7 +401,7 @@ namespace MeshCore.Network.SecureChannel
 
                                 //release read lock for allowing renegotiation to take read lock and wait for it to complete
                                 if (!Monitor.Wait(_readLock, ReadTimeout))
-                                    throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerMeshId, "Renegotiation timed out.");
+                                    throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerUserId, "Renegotiation timed out.");
                             }
                             else
                             {
@@ -574,7 +574,7 @@ namespace MeshCore.Network.SecureChannel
             BinaryNumber computedAuthHMAC = new BinaryNumber(_authHMACDecrypt.ComputeHash(_readEncryptedData, 0, _readBufferPosition));
 
             if (!computedAuthHMAC.Equals(authHMAC))
-                throw new SecureChannelException(SecureChannelCode.MessageAuthenticationFailed, _remotePeerEP, _remotePeerMeshId);
+                throw new SecureChannelException(SecureChannelCode.MessageAuthenticationFailed, _remotePeerEP, _remotePeerUserId);
 
             _readBufferPosition = 3;
 
@@ -617,7 +617,7 @@ namespace MeshCore.Network.SecureChannel
 
                     //wait till other party responds with a return RENEGOTIATE packet
                     if (!Monitor.Wait(_renegotiationLock, ReadTimeout))
-                        throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerMeshId, "Renegotiation timed out.");
+                        throw new SecureChannelException(SecureChannelCode.RenegotiationFailed, _remotePeerEP, _remotePeerUserId, "Renegotiation timed out.");
 
                     lock (_readLock)
                     {
@@ -699,7 +699,7 @@ namespace MeshCore.Network.SecureChannel
                     break;
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerUserId);
             }
 
             //init variables
@@ -721,8 +721,8 @@ namespace MeshCore.Network.SecureChannel
         public IPEndPoint RemotePeerEP
         { get { return _remotePeerEP; } }
 
-        public BinaryNumber RemotePeerMeshId
-        { get { return _remotePeerMeshId; } }
+        public BinaryNumber RemotePeerUserId
+        { get { return _remotePeerUserId; } }
 
         public SecureChannelCipherSuite SelectedCipher
         { get { return _selectedCipher; } }

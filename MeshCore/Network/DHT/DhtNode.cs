@@ -160,7 +160,7 @@ namespace MeshCore.Network.DHT
                         switch (query.Peers[0].Type)
                         {
                             case PeerEndPointType.IPEndPoint:
-                                _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(query.Peers[0].MeshId, new IPEndPoint(remoteNodeIP, query.Peers[0].IPEndPoint.Port)));
+                                _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(query.Peers[0].UserId, new IPEndPoint(remoteNodeIP, query.Peers[0].IPEndPoint.Port)));
                                 break;
 
                             case PeerEndPointType.TorAddress:

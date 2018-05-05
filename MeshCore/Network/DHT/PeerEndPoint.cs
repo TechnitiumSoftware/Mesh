@@ -38,7 +38,7 @@ namespace MeshCore.Network.DHT
 
         const int PEER_EXPIRY_TIME_SECONDS = 900; //15 min expiry
 
-        BinaryNumber _meshId;
+        BinaryNumber _userId;
         PeerEndPointType _type;
         IPEndPoint _ep;
         string _torAddress;
@@ -49,30 +49,30 @@ namespace MeshCore.Network.DHT
 
         #region constructor
 
-        public PeerEndPoint(BinaryNumber meshId, IPEndPoint ep)
+        public PeerEndPoint(BinaryNumber userId, IPEndPoint ep)
         {
-            _meshId = meshId;
+            _userId = userId;
             _type = PeerEndPointType.IPEndPoint;
             _ep = ep;
         }
 
-        public PeerEndPoint(BinaryNumber meshId, int servicePort)
+        public PeerEndPoint(BinaryNumber userId, int servicePort)
         {
-            _meshId = meshId;
+            _userId = userId;
             _type = PeerEndPointType.IPEndPoint;
             _ep = new IPEndPoint(IPAddress.Any, servicePort);
         }
 
-        public PeerEndPoint(BinaryNumber meshId, string torAddress)
+        public PeerEndPoint(BinaryNumber userId, string torAddress)
         {
-            _meshId = meshId;
+            _userId = userId;
             _type = PeerEndPointType.TorAddress;
             _torAddress = torAddress;
         }
 
         public PeerEndPoint(Stream s)
         {
-            _meshId = new BinaryNumber(s);
+            _userId = new BinaryNumber(s);
 
             int type = s.ReadByte();
             if (type < 0)
@@ -120,7 +120,7 @@ namespace MeshCore.Network.DHT
 
         public void WriteTo(Stream s)
         {
-            _meshId.WriteTo(s);
+            _userId.WriteTo(s);
 
             s.WriteByte((byte)_type);
 
@@ -153,7 +153,7 @@ namespace MeshCore.Network.DHT
             if (other == null)
                 return false;
 
-            if (_meshId != other._meshId)
+            if (_userId != other._userId)
                 return false;
 
             if (_type != other._type)
@@ -179,15 +179,15 @@ namespace MeshCore.Network.DHT
 
         public override int GetHashCode()
         {
-            return _meshId.GetHashCode();
+            return _userId.GetHashCode();
         }
 
         #endregion
 
         #region properties
 
-        public BinaryNumber MeshId
-        { get { return _meshId; } }
+        public BinaryNumber UserId
+        { get { return _userId; } }
 
         public PeerEndPointType Type
         { get { return _type; } }

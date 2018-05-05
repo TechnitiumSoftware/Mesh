@@ -32,23 +32,23 @@ namespace MeshCore.Network.SecureChannel
         readonly SecureChannelCipherSuite _supportedCiphers;
         readonly SecureChannelOptions _options;
         readonly byte[] _preSharedKey;
-        readonly BinaryNumber _meshId;
+        readonly BinaryNumber _userId;
         readonly byte[] _privateKey;
-        IEnumerable<BinaryNumber> _trustedMeshIds;
+        IEnumerable<BinaryNumber> _trustedUserIds;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelServerStream(Stream stream, IPEndPoint remotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, BinaryNumber meshId, byte[] privateKey, IEnumerable<BinaryNumber> trustedMeshIds)
+        public SecureChannelServerStream(Stream stream, IPEndPoint remotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, BinaryNumber userId, byte[] privateKey, IEnumerable<BinaryNumber> trustedUserIds)
             : base(remotePeerEP, renegotiateAfterBytesSent, renegotiateAfterSeconds)
         {
             _supportedCiphers = supportedCiphers;
             _options = options;
             _preSharedKey = preSharedKey;
-            _meshId = meshId;
+            _userId = userId;
             _privateKey = privateKey;
-            _trustedMeshIds = trustedMeshIds;
+            _trustedUserIds = trustedUserIds;
 
             Start(stream);
         }
@@ -73,14 +73,14 @@ namespace MeshCore.Network.SecureChannel
                         break;
 
                     default:
-                        throw new SecureChannelException(SecureChannelCode.ProtocolVersionNotSupported, _remotePeerEP, _remotePeerMeshId, "SecureChannel protocol version not supported: " + clientHello.Version);
+                        throw new SecureChannelException(SecureChannelCode.ProtocolVersionNotSupported, _remotePeerEP, _remotePeerUserId, "SecureChannel protocol version not supported: " + clientHello.Version);
                 }
             }
             catch (SecureChannelException ex)
             {
                 if (ex.Code == SecureChannelCode.RemoteError)
                 {
-                    throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerMeshId, ex.Message, ex);
+                    throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerUserId, ex.Message, ex);
                 }
                 else
                 {
@@ -100,7 +100,7 @@ namespace MeshCore.Network.SecureChannel
                     { }
 
                     if (ex.PeerEP == null)
-                        throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerMeshId, ex.Message, ex);
+                        throw new SecureChannelException(ex.Code, _remotePeerEP, _remotePeerUserId, ex.Message, ex);
 
                     throw;
                 }
@@ -139,7 +139,7 @@ namespace MeshCore.Network.SecureChannel
 
             if (availableCiphers == SecureChannelCipherSuite.None)
             {
-                throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
+                throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerUserId);
             }
             else if (availableCiphers.HasFlag(SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256))
             {
@@ -151,12 +151,12 @@ namespace MeshCore.Network.SecureChannel
             }
             else
             {
-                throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
+                throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerUserId);
             }
 
             //match options
             if (_options != clientHello.Options)
-                throw new SecureChannelException(SecureChannelCode.NoMatchingOptionsAvailable, _remotePeerEP, _remotePeerMeshId);
+                throw new SecureChannelException(SecureChannelCode.NoMatchingOptionsAvailable, _remotePeerEP, _remotePeerUserId);
 
             //write server hello
             SecureChannelHandshakeHello serverHello = new SecureChannelHandshakeHello(_selectedCipher, _options);
@@ -176,7 +176,7 @@ namespace MeshCore.Network.SecureChannel
                     break;
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerUserId);
             }
 
             //send server key exchange data
@@ -190,7 +190,7 @@ namespace MeshCore.Network.SecureChannel
             if (_options.HasFlag(SecureChannelOptions.PRE_SHARED_KEY_AUTHENTICATION_REQUIRED))
             {
                 if (!clientKeyExchange.IsPskAuthValid(serverHello, clientHello, _preSharedKey))
-                    throw new SecureChannelException(SecureChannelCode.PskAuthenticationFailed, _remotePeerEP, _remotePeerMeshId);
+                    throw new SecureChannelException(SecureChannelCode.PskAuthenticationFailed, _remotePeerEP, _remotePeerUserId);
             }
 
             #endregion
@@ -201,7 +201,7 @@ namespace MeshCore.Network.SecureChannel
 
             #endregion
 
-            #region 4. MeshId based authentication
+            #region 4. UserId based authentication
 
             switch (_selectedCipher)
             {
@@ -210,22 +210,22 @@ namespace MeshCore.Network.SecureChannel
                     {
                         //read client auth
                         SecureChannelHandshakeAuthentication clientAuth = new SecureChannelHandshakeAuthentication(this);
-                        _remotePeerMeshId = clientAuth.MeshId;
+                        _remotePeerUserId = clientAuth.UserId;
 
                         //authenticate client
                         if (!clientAuth.IsSignatureValid(clientKeyExchange, serverHello, clientHello))
-                            throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, _remotePeerEP, _remotePeerMeshId);
+                            throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, _remotePeerEP, _remotePeerUserId);
 
-                        if (_trustedMeshIds != null)
+                        if (_trustedUserIds != null)
                         {
                             //check if client is trusted
-                            if (!clientAuth.IsTrustedMeshId(_trustedMeshIds))
-                                throw new SecureChannelException(SecureChannelCode.UntrustedRemotePeerMeshId, _remotePeerEP, _remotePeerMeshId);
+                            if (!clientAuth.IsTrustedUserId(_trustedUserIds))
+                                throw new SecureChannelException(SecureChannelCode.UntrustedRemotePeerUserId, _remotePeerEP, _remotePeerUserId);
                         }
                     }
 
                     //write server auth
-                    new SecureChannelHandshakeAuthentication(serverKeyExchange, serverHello, clientHello, _meshId, _privateKey).WriteTo(this);
+                    new SecureChannelHandshakeAuthentication(serverKeyExchange, serverHello, clientHello, _userId, _privateKey).WriteTo(this);
                     this.Flush();
                     break;
 
@@ -233,7 +233,7 @@ namespace MeshCore.Network.SecureChannel
                     break; //no auth for ANON
 
                 default:
-                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerMeshId);
+                    throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerUserId);
             }
 
             #endregion

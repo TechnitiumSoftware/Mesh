@@ -249,7 +249,7 @@ namespace MeshCore.Network.SecureChannel
     {
         #region variables
 
-        readonly BinaryNumber _meshId;
+        readonly BinaryNumber _userId;
         readonly byte[] _publicKey;
         readonly byte[] _signature;
 
@@ -257,13 +257,13 @@ namespace MeshCore.Network.SecureChannel
 
         #region constructor
 
-        public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, BinaryNumber meshId, byte[] privateKey)
+        public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, BinaryNumber userId, byte[] privateKey)
             : base(SecureChannelCode.None)
         {
             switch (serverHello.SupportedCiphers)
             {
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
-                    _meshId = meshId;
+                    _userId = userId;
 
                     using (RSA rsa = RSA.Create())
                     {
@@ -275,8 +275,8 @@ namespace MeshCore.Network.SecureChannel
 
                         _publicKey = DEREncoding.EncodeRSAPublicKey(rsaPrivateKey);
 
-                        if (!SecureChannelStream.IsMeshIdValid(_meshId, _publicKey))
-                            throw new ArgumentException("MeshId does not match with public key.");
+                        if (!SecureChannelStream.IsUserIdValid(_userId, _publicKey))
+                            throw new ArgumentException("UserId does not match with public key.");
 
                         using (MemoryStream mS = new MemoryStream())
                         {
@@ -298,7 +298,7 @@ namespace MeshCore.Network.SecureChannel
         public SecureChannelHandshakeAuthentication(Stream s)
             : base(s)
         {
-            _meshId = new BinaryNumber(s);
+            _userId = new BinaryNumber(s);
 
             byte[] buffer = new byte[2];
 
@@ -315,11 +315,11 @@ namespace MeshCore.Network.SecureChannel
 
         #region public
 
-        public bool IsTrustedMeshId(IEnumerable<BinaryNumber> trustedMeshIds)
+        public bool IsTrustedUserId(IEnumerable<BinaryNumber> trustedUserIds)
         {
-            foreach (BinaryNumber trustedMeshId in trustedMeshIds)
+            foreach (BinaryNumber trustedUserId in trustedUserIds)
             {
-                if (trustedMeshId == _meshId)
+                if (trustedUserId == _userId)
                     return true;
             }
 
@@ -328,7 +328,7 @@ namespace MeshCore.Network.SecureChannel
 
         public bool IsSignatureValid(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
         {
-            if (!SecureChannelStream.IsMeshIdValid(_meshId, _publicKey))
+            if (!SecureChannelStream.IsUserIdValid(_userId, _publicKey))
                 return false;
 
             switch (serverHello.SupportedCiphers)
@@ -362,7 +362,7 @@ namespace MeshCore.Network.SecureChannel
         {
             base.WriteTo(s);
 
-            _meshId.WriteTo(s);
+            _userId.WriteTo(s);
 
             s.Write(BitConverter.GetBytes(Convert.ToUInt16(_publicKey.Length)), 0, 2);
             s.Write(_publicKey, 0, _publicKey.Length);
@@ -375,8 +375,8 @@ namespace MeshCore.Network.SecureChannel
 
         #region properties
 
-        public BinaryNumber MeshId
-        { get { return _meshId; } }
+        public BinaryNumber UserId
+        { get { return _userId; } }
 
         public byte[] PublicKey
         { get { return _publicKey; } }
