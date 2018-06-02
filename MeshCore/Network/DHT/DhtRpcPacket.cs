@@ -19,7 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using System;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using TechnitiumLibrary.IO;
+using TechnitiumLibrary.Net;
 
 namespace MeshCore.Network.DHT
 {
@@ -31,11 +34,11 @@ namespace MeshCore.Network.DHT
         ANNOUNCE_PEER = 3
     }
 
-    class DhtRpcPacket : IWriteStream
+    class DhtRpcPacket
     {
         #region variables
 
-        readonly ushort _sourceNodePort;
+        readonly EndPoint _sourceNodeEP;
         readonly DhtRpcType _type;
 
         readonly BinaryNumber _networkId;
@@ -46,22 +49,15 @@ namespace MeshCore.Network.DHT
 
         #region constructor
 
-        public DhtRpcPacket(Stream s)
+        public DhtRpcPacket(BinaryReader bR)
         {
-            int version = s.ReadByte();
+            int version = bR.ReadByte();
 
             switch (version)
             {
-                case -1:
-                    throw new EndOfStreamException();
-
                 case 1:
-                    byte[] buffer = new byte[20];
-
-                    OffsetStream.StreamRead(s, buffer, 0, 2);
-                    _sourceNodePort = BitConverter.ToUInt16(buffer, 0);
-
-                    _type = (DhtRpcType)s.ReadByte();
+                    _sourceNodeEP = EndPointExtension.Parse(bR);
+                    _type = (DhtRpcType)bR.ReadByte();
 
                     switch (_type)
                     {
@@ -69,48 +65,35 @@ namespace MeshCore.Network.DHT
                             break;
 
                         case DhtRpcType.FIND_NODE:
-                            {
-                                OffsetStream.StreamRead(s, buffer, 0, 20);
-                                _networkId = BinaryNumber.Clone(buffer, 0, 20);
+                            _networkId = new BinaryNumber(bR.BaseStream);
 
-                                int count = s.ReadByte();
-                                _contacts = new NodeContact[count];
+                            _contacts = new NodeContact[bR.ReadByte()];
+                            for (int i = 0; i < _contacts.Length; i++)
+                                _contacts[i] = new NodeContact(bR);
 
-                                for (int i = 0; i < count; i++)
-                                    _contacts[i] = new NodeContact(s);
-                            }
                             break;
 
                         case DhtRpcType.FIND_PEERS:
-                            {
-                                OffsetStream.StreamRead(s, buffer, 0, 20);
-                                _networkId = BinaryNumber.Clone(buffer, 0, 20);
+                            _networkId = new BinaryNumber(bR.BaseStream);
 
-                                int count = s.ReadByte();
-                                _contacts = new NodeContact[count];
+                            _contacts = new NodeContact[bR.ReadByte()];
+                            for (int i = 0; i < _contacts.Length; i++)
+                                _contacts[i] = new NodeContact(bR);
 
-                                for (int i = 0; i < count; i++)
-                                    _contacts[i] = new NodeContact(s);
+                            _peers = new PeerEndPoint[bR.ReadByte()];
+                            for (int i = 0; i < _peers.Length; i++)
+                                _peers[i] = new PeerEndPoint(bR);
 
-                                count = s.ReadByte();
-                                _peers = new PeerEndPoint[count];
-
-                                for (int i = 0; i < count; i++)
-                                    _peers[i] = new PeerEndPoint(s);
-                            }
                             break;
 
                         case DhtRpcType.ANNOUNCE_PEER:
-                            {
-                                OffsetStream.StreamRead(s, buffer, 0, 20);
-                                _networkId = BinaryNumber.Clone(buffer, 0, 20);
+                            _networkId = new BinaryNumber(bR.BaseStream);
 
-                                int count = s.ReadByte();
-                                _peers = new PeerEndPoint[count];
+                            _peers = new PeerEndPoint[bR.ReadByte()];
 
-                                for (int i = 0; i < count; i++)
-                                    _peers[i] = new PeerEndPoint(s);
-                            }
+                            for (int i = 0; i < _peers.Length; i++)
+                                _peers[i] = new PeerEndPoint(bR);
+
                             break;
 
                         default:
@@ -120,13 +103,13 @@ namespace MeshCore.Network.DHT
                     break;
 
                 default:
-                    throw new IOException("DHT-RPC packet version not supported: " + version);
+                    throw new InvalidDataException("DHT-RPC packet version not supported: " + version);
             }
         }
 
-        private DhtRpcPacket(ushort sourceNodePort, DhtRpcType type, BinaryNumber networkId, NodeContact[] contacts, PeerEndPoint[] peers)
+        private DhtRpcPacket(EndPoint sourceNodeEP, DhtRpcType type, BinaryNumber networkId, NodeContact[] contacts, PeerEndPoint[] peers)
         {
-            _sourceNodePort = sourceNodePort;
+            _sourceNodeEP = sourceNodeEP;
             _type = type;
 
             _networkId = networkId;
@@ -140,109 +123,105 @@ namespace MeshCore.Network.DHT
 
         public static DhtRpcPacket CreatePingPacket(NodeContact sourceNode)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.PING, null, null, null);
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.PING, null, null, null);
         }
 
         public static DhtRpcPacket CreateFindNodePacketQuery(NodeContact sourceNode, BinaryNumber networkId)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_NODE, networkId, null, null);
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.FIND_NODE, networkId, null, null);
         }
 
         public static DhtRpcPacket CreateFindNodePacketResponse(NodeContact sourceNode, BinaryNumber networkId, NodeContact[] contacts)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_NODE, networkId, contacts, null);
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.FIND_NODE, networkId, contacts, null);
         }
 
         public static DhtRpcPacket CreateFindPeersPacketQuery(NodeContact sourceNode, BinaryNumber networkId)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_PEERS, networkId, null, null);
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.FIND_PEERS, networkId, null, null);
         }
 
         public static DhtRpcPacket CreateFindPeersPacketResponse(NodeContact sourceNode, BinaryNumber networkId, NodeContact[] contacts, PeerEndPoint[] peers)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.FIND_PEERS, networkId, contacts, peers);
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.FIND_PEERS, networkId, contacts, peers);
         }
 
         public static DhtRpcPacket CreateAnnouncePeerPacketQuery(NodeContact sourceNode, BinaryNumber networkId, PeerEndPoint peer)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.ANNOUNCE_PEER, networkId, null, new PeerEndPoint[] { peer });
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.ANNOUNCE_PEER, networkId, null, new PeerEndPoint[] { peer });
         }
 
         public static DhtRpcPacket CreateAnnouncePeerPacketResponse(NodeContact sourceNode, BinaryNumber networkId, PeerEndPoint[] peers)
         {
-            return new DhtRpcPacket(Convert.ToUInt16(sourceNode.NodeEP.Port), DhtRpcType.ANNOUNCE_PEER, networkId, null, peers);
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.ANNOUNCE_PEER, networkId, null, peers);
         }
 
         #endregion
 
         #region public
 
-        public void WriteTo(Stream s)
+        public void WriteTo(BinaryWriter bW)
         {
-            s.WriteByte(1); //version
-            s.Write(BitConverter.GetBytes(_sourceNodePort), 0, 2); //source node port
-            s.WriteByte((byte)_type); //type
+            bW.Write((byte)1); //version
+            _sourceNodeEP.WriteTo(bW); //source node port
+            bW.Write((byte)_type); //type
 
             switch (_type)
             {
                 case DhtRpcType.FIND_NODE:
-                    s.Write(_networkId.Value, 0, 20);
+                    _networkId.WriteTo(bW.BaseStream);
 
                     if (_contacts == null)
                     {
-                        s.WriteByte(0);
+                        bW.Write((byte)0);
                     }
                     else
                     {
-                        s.WriteByte(Convert.ToByte(_contacts.Length));
-
+                        bW.Write(Convert.ToByte(_contacts.Length));
                         foreach (NodeContact contact in _contacts)
-                            contact.WriteTo(s);
+                            contact.WriteTo(bW);
                     }
 
                     break;
 
                 case DhtRpcType.FIND_PEERS:
-                    s.Write(_networkId.Value, 0, 20);
+                    _networkId.WriteTo(bW.BaseStream);
 
                     if (_contacts == null)
                     {
-                        s.WriteByte(0);
+                        bW.Write((byte)0);
                     }
                     else
                     {
-                        s.WriteByte(Convert.ToByte(_contacts.Length));
-
+                        bW.Write(Convert.ToByte(_contacts.Length));
                         foreach (NodeContact contact in _contacts)
-                            contact.WriteTo(s);
+                            contact.WriteTo(bW);
                     }
 
                     if (_peers == null)
                     {
-                        s.WriteByte(0);
+                        bW.Write((byte)0);
                     }
                     else
                     {
-                        s.WriteByte(Convert.ToByte(_peers.Length));
-
+                        bW.Write(Convert.ToByte(_peers.Length));
                         foreach (PeerEndPoint peer in _peers)
-                            peer.WriteTo(s);
+                            peer.WriteTo(bW);
                     }
                     break;
 
                 case DhtRpcType.ANNOUNCE_PEER:
-                    s.Write(_networkId.Value, 0, 20);
+                    _networkId.WriteTo(bW.BaseStream);
 
                     if (_peers == null)
                     {
-                        s.WriteByte(0);
+                        bW.Write((byte)0);
                     }
                     else
                     {
-                        s.WriteByte(Convert.ToByte(_peers.Length));
-
+                        bW.Write(Convert.ToByte(_peers.Length));
                         foreach (PeerEndPoint peer in _peers)
-                            peer.WriteTo(s);
+                            peer.WriteTo(bW);
                     }
                     break;
             }
@@ -252,8 +231,19 @@ namespace MeshCore.Network.DHT
 
         #region properties
 
+        public EndPoint SourceNodeEP
+        { get { return _sourceNodeEP; } }
+
         public ushort SourceNodePort
-        { get { return _sourceNodePort; } }
+        {
+            get
+            {
+                if (_sourceNodeEP.AddressFamily == AddressFamily.Unspecified)
+                    return Convert.ToUInt16((_sourceNodeEP as DomainEndPoint).Port);
+
+                return Convert.ToUInt16((_sourceNodeEP as IPEndPoint).Port);
+            }
+        }
 
         public DhtRpcType Type
         { get { return _type; } }

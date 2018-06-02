@@ -21,12 +21,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 using TechnitiumLibrary.IO;
+using TechnitiumLibrary.Net;
 
 /*
  * Kademlia based Distributed Hash Table (DHT) Implementation For Mesh
- * ==================================================================
+ * ===================================================================
  *
  * FEATURES IMPLEMENTED
  * --------------------
@@ -70,14 +72,14 @@ namespace MeshCore.Network.DHT
 
         #region constructor
 
-        public DhtNode(IDhtConnectionManager manager, bool isInternetNode)
+        public DhtNode(IDhtConnectionManager manager, EndPoint nodeEP, bool isInternetNode)
         {
             _manager = manager;
 
             if (isInternetNode)
-                _currentNode = new CurrentNode(BinaryNumber.GenerateRandomNumber160(), manager.NodeEndPoint);
+                _currentNode = new CurrentNode(BinaryNumber.GenerateRandomNumber256(), nodeEP);
             else
-                _currentNode = new CurrentNode(manager.NodeEndPoint);
+                _currentNode = new CurrentNode(nodeEP);
 
             //init routing table
             _routingTable = new KBucket(_currentNode);
@@ -135,10 +137,29 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        private DhtRpcPacket ProcessQuery(DhtRpcPacket query, IPAddress remoteNodeIP)
+        private DhtRpcPacket ProcessQuery(DhtRpcPacket query, EndPoint remoteNodeEP)
         {
-            AddNode(new IPEndPoint(remoteNodeIP, query.SourceNodePort));
+            //remoteNodeEP will be as seen by connection manager and always will be IPEndPoint
+            //in case of remote node querying via Tor, use the onion address from the query as remote end point
 
+            EndPoint remoteEP;
+
+            if (query.SourceNodeEP.AddressFamily == AddressFamily.Unspecified)
+            {
+                //remote node query via Tor
+                //use the tor hidden end point claimed by remote node
+                remoteEP = query.SourceNodeEP;
+            }
+            else
+            {
+                //use remote node end point as seen by connection manager and use port from query
+                remoteEP = new IPEndPoint((remoteNodeEP as IPEndPoint).Address, query.SourceNodePort);
+            }
+
+            //try add remote node
+            AddNode(remoteEP);
+
+            //process query
             switch (query.Type)
             {
                 case DhtRpcType.PING:
@@ -157,16 +178,14 @@ namespace MeshCore.Network.DHT
                 case DhtRpcType.ANNOUNCE_PEER:
                     if ((query.Peers != null) && (query.Peers.Length > 0))
                     {
-                        switch (query.Peers[0].Type)
-                        {
-                            case PeerEndPointType.IPEndPoint:
-                                _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(query.Peers[0].UserId, new IPEndPoint(remoteNodeIP, query.Peers[0].IPEndPoint.Port)));
-                                break;
+                        EndPoint peerEP;
 
-                            case PeerEndPointType.TorAddress:
-                                _currentNode.StorePeer(query.NetworkID, query.Peers[0]);
-                                break;
-                        }
+                        if (remoteNodeEP.AddressFamily == AddressFamily.Unspecified)
+                            peerEP = new DomainEndPoint((remoteNodeEP as DomainEndPoint).Address, query.Peers[0].EndPointPort);
+                        else
+                            peerEP = new IPEndPoint((remoteNodeEP as IPEndPoint).Address, query.Peers[0].EndPointPort);
+
+                        _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(peerEP));
                     }
 
                     return DhtRpcPacket.CreateAnnouncePeerPacketResponse(_currentNode, query.NetworkID, _currentNode.GetPeers(query.NetworkID));
@@ -183,7 +202,7 @@ namespace MeshCore.Network.DHT
             try
             {
                 if (contact.IsCurrentNode)
-                    return ProcessQuery(query, contact.NodeEP.Address);
+                    return ProcessQuery(query, contact.NodeEP);
 
                 s = _manager.GetConnection(contact.NodeEP);
 
@@ -192,11 +211,11 @@ namespace MeshCore.Network.DHT
                 s.ReadTimeout = QUERY_TIMEOUT;
 
                 //send query
-                query.WriteTo(s);
+                query.WriteTo(new BinaryWriter(s));
                 s.Flush();
 
                 //read response
-                DhtRpcPacket response = new DhtRpcPacket(s);
+                DhtRpcPacket response = new DhtRpcPacket(new BinaryReader(s));
 
                 //auto add contact or update last seen time
                 {
@@ -500,19 +519,22 @@ namespace MeshCore.Network.DHT
 
         #region public
 
-        public void AcceptConnection(Stream s, IPAddress remoteNodeIP)
+        public void AcceptConnection(Stream s, EndPoint remoteNodeEP)
         {
             //set timeout
             s.WriteTimeout = QUERY_TIMEOUT;
             s.ReadTimeout = QUERY_TIMEOUT;
 
+            BinaryReader bR = new BinaryReader(s);
+            BinaryWriter bW = new BinaryWriter(s);
+
             while (true)
             {
-                DhtRpcPacket response = ProcessQuery(new DhtRpcPacket(s), remoteNodeIP);
+                DhtRpcPacket response = ProcessQuery(new DhtRpcPacket(bR), remoteNodeEP);
                 if (response == null)
                     break;
 
-                response.WriteTo(s);
+                response.WriteTo(bW);
                 s.Flush();
             }
         }
@@ -523,19 +545,22 @@ namespace MeshCore.Network.DHT
                 AddNode(contact);
         }
 
-        public void AddNode(IEnumerable<IPEndPoint> nodeEPs)
+        public void AddNode(IEnumerable<EndPoint> nodeEPs)
         {
-            foreach (IPEndPoint nodeEP in nodeEPs)
+            foreach (EndPoint nodeEP in nodeEPs)
                 AddNode(new NodeContact(nodeEP));
         }
 
-        public void AddNode(IPEndPoint nodeEP)
+        public void AddNode(EndPoint nodeEP)
         {
             AddNode(new NodeContact(nodeEP));
         }
 
         public void AddNode(NodeContact contact)
         {
+            if (contact.NodeEP.AddressFamily != _currentNode.NodeEP.AddressFamily)
+                return;
+
             if (_routingTable.AddContact(contact))
             {
                 ThreadPool.QueueUserWorkItem(delegate (object state)
@@ -565,10 +590,10 @@ namespace MeshCore.Network.DHT
             return QueryAnnounce(initialContacts, networkId, serviceEP);
         }
 
-        public IPEndPoint[] GetAllNodeEPs(bool includeStaleContacts)
+        public EndPoint[] GetAllNodeEPs(bool includeStaleContacts)
         {
             NodeContact[] contacts = _routingTable.GetAllContacts(includeStaleContacts);
-            IPEndPoint[] nodeEPs = new IPEndPoint[contacts.Length];
+            EndPoint[] nodeEPs = new EndPoint[contacts.Length];
 
             for (int i = 0; i < contacts.Length; i++)
                 nodeEPs[i] = contacts[i].NodeEP;
@@ -576,10 +601,10 @@ namespace MeshCore.Network.DHT
             return nodeEPs;
         }
 
-        public IPEndPoint[] GetKClosestRandomNodeEPs()
+        public EndPoint[] GetKRandomNodeEPs()
         {
-            NodeContact[] contacts = _routingTable.GetKClosestContacts(BinaryNumber.GenerateRandomNumber160());
-            IPEndPoint[] nodeEPs = new IPEndPoint[contacts.Length];
+            NodeContact[] contacts = _routingTable.GetKClosestContacts(BinaryNumber.GenerateRandomNumber256());
+            EndPoint[] nodeEPs = new EndPoint[contacts.Length];
 
             for (int i = 0; i < contacts.Length; i++)
                 nodeEPs[i] = contacts[i].NodeEP;
@@ -617,13 +642,13 @@ namespace MeshCore.Network.DHT
 
             #region constructor
 
-            public CurrentNode(IPEndPoint nodeEP)
+            public CurrentNode(EndPoint nodeEP)
                 : base(nodeEP)
             {
                 _currentNode = true;
             }
 
-            public CurrentNode(BinaryNumber nodeId, IPEndPoint nodeEP)
+            public CurrentNode(BinaryNumber nodeId, EndPoint nodeEP)
                 : base(nodeId, nodeEP)
             {
                 _currentNode = true;

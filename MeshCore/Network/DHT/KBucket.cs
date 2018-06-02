@@ -547,7 +547,7 @@ namespace MeshCore.Network.DHT
                         ThreadPool.QueueUserWorkItem(delegate (object state)
                         {
                             //get random node ID in the bucket range
-                            BinaryNumber randomNodeID = BinaryNumber.GenerateRandomNumber160();
+                            BinaryNumber randomNodeID = BinaryNumber.GenerateRandomNumber256();
 
                             if (kBucket._bucketID != null)
                                 randomNodeID = (randomNodeID >> kBucket._bucketDepth) | kBucket._bucketID;

@@ -24,7 +24,6 @@ namespace MeshCore.Network.DHT
 {
     public interface IDhtConnectionManager
     {
-        IPEndPoint NodeEndPoint { get; }
-        Stream GetConnection(IPEndPoint remoteNodeEP);
+        Stream GetConnection(EndPoint remoteNodeEP);
     }
 }

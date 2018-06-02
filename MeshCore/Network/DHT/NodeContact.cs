@@ -26,7 +26,7 @@ using TechnitiumLibrary.Net;
 
 namespace MeshCore.Network.DHT
 {
-    class NodeContact : IWriteStream
+    class NodeContact
     {
         #region variables
 
@@ -35,7 +35,7 @@ namespace MeshCore.Network.DHT
 
         static readonly byte[] NODE_ID_SALT = new byte[] { 0xF4, 0xC7, 0x56, 0x9A, 0xA3, 0xAD, 0xC9, 0xA7, 0x13, 0x0E, 0xCA, 0x56, 0x56, 0xA3, 0x52, 0x8F, 0xFE, 0x6E, 0x9C, 0x72 };
 
-        readonly IPEndPoint _nodeEP;
+        readonly EndPoint _nodeEP;
         readonly BinaryNumber _nodeId;
 
         protected bool _currentNode;
@@ -47,19 +47,19 @@ namespace MeshCore.Network.DHT
 
         #region constructor
 
-        public NodeContact(Stream s)
+        public NodeContact(BinaryReader bR)
         {
-            _nodeEP = IPEndPointParser.Parse(s);
+            _nodeEP = EndPointExtension.Parse(bR);
             _nodeId = GetNodeId(_nodeEP);
         }
 
-        public NodeContact(IPEndPoint nodeEP)
+        public NodeContact(EndPoint nodeEP)
         {
             _nodeEP = nodeEP;
             _nodeId = GetNodeId(_nodeEP);
         }
 
-        protected NodeContact(BinaryNumber nodeId, IPEndPoint nodeEP)
+        protected NodeContact(BinaryNumber nodeId, EndPoint nodeEP)
         {
             _nodeId = nodeId;
             _nodeEP = nodeEP;
@@ -69,13 +69,13 @@ namespace MeshCore.Network.DHT
 
         #region static
 
-        private static BinaryNumber GetNodeId(IPEndPoint nodeEP)
+        private static BinaryNumber GetNodeId(EndPoint nodeEP)
         {
-            using (HMAC hmac = new HMACSHA1(NODE_ID_SALT))
+            using (HMAC hmac = new HMACSHA256(NODE_ID_SALT))
             {
-                using (MemoryStream mS = new MemoryStream(20))
+                using (MemoryStream mS = new MemoryStream(32))
                 {
-                    IPEndPointParser.WriteTo(nodeEP, mS);
+                    nodeEP.WriteTo(new BinaryWriter(mS));
                     mS.Position = 0;
 
                     return new BinaryNumber(hmac.ComputeHash(mS));
@@ -107,9 +107,9 @@ namespace MeshCore.Network.DHT
             _failRpcCount++;
         }
 
-        public void WriteTo(Stream s)
+        public void WriteTo(BinaryWriter bW)
         {
-            IPEndPointParser.WriteTo(_nodeEP, s);
+            _nodeEP.WriteTo(bW);
         }
 
         public override bool Equals(object obj)
@@ -144,7 +144,7 @@ namespace MeshCore.Network.DHT
 
         #region properties
 
-        public IPEndPoint NodeEP
+        public EndPoint NodeEP
         { get { return _nodeEP; } }
 
         public BinaryNumber NodeId

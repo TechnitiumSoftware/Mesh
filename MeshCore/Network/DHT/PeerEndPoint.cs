@@ -20,28 +20,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 using System;
 using System.IO;
 using System.Net;
-using System.Text;
-using TechnitiumLibrary.IO;
+using System.Net.Sockets;
 using TechnitiumLibrary.Net;
 
 namespace MeshCore.Network.DHT
 {
-    public enum PeerEndPointType : byte
-    {
-        IPEndPoint = 1,
-        TorAddress = 2
-    }
-
     public class PeerEndPoint
     {
         #region variables
 
         const int PEER_EXPIRY_TIME_SECONDS = 900; //15 min expiry
 
-        BinaryNumber _userId;
-        PeerEndPointType _type;
-        IPEndPoint _ep;
-        string _torAddress;
+        EndPoint _endPoint;
 
         DateTime _dateAdded = DateTime.UtcNow;
 
@@ -49,59 +39,14 @@ namespace MeshCore.Network.DHT
 
         #region constructor
 
-        public PeerEndPoint(BinaryNumber userId, IPEndPoint ep)
+        internal PeerEndPoint(EndPoint endPoint)
         {
-            _userId = userId;
-            _type = PeerEndPointType.IPEndPoint;
-            _ep = ep;
+            _endPoint = endPoint;
         }
 
-        public PeerEndPoint(BinaryNumber userId, int servicePort)
+        public PeerEndPoint(BinaryReader bR)
         {
-            _userId = userId;
-            _type = PeerEndPointType.IPEndPoint;
-            _ep = new IPEndPoint(IPAddress.Any, servicePort);
-        }
-
-        public PeerEndPoint(BinaryNumber userId, string torAddress)
-        {
-            _userId = userId;
-            _type = PeerEndPointType.TorAddress;
-            _torAddress = torAddress;
-        }
-
-        public PeerEndPoint(Stream s)
-        {
-            _userId = new BinaryNumber(s);
-
-            int type = s.ReadByte();
-            if (type < 0)
-                throw new EndOfStreamException();
-
-            _type = (PeerEndPointType)type;
-
-            switch (_type)
-            {
-                case PeerEndPointType.IPEndPoint:
-                    _ep = IPEndPointParser.Parse(s);
-                    break;
-
-                case PeerEndPointType.TorAddress:
-                    {
-                        int len = s.ReadByte();
-                        if (len < 0)
-                            throw new EndOfStreamException();
-
-                        byte[] buffer = new byte[len];
-                        OffsetStream.StreamRead(s, buffer, 0, buffer.Length);
-
-                        _torAddress = Encoding.UTF8.GetString(buffer);
-                    }
-                    break;
-
-                default:
-                    throw new IOException("Invalid peer end point type.");
-            }
+            _endPoint = EndPointExtension.Parse(bR);
         }
 
         #endregion
@@ -118,27 +63,9 @@ namespace MeshCore.Network.DHT
             _dateAdded = DateTime.UtcNow;
         }
 
-        public void WriteTo(Stream s)
+        public void WriteTo(BinaryWriter bW)
         {
-            _userId.WriteTo(s);
-
-            s.WriteByte((byte)_type);
-
-            switch (_type)
-            {
-                case PeerEndPointType.IPEndPoint:
-                    IPEndPointParser.WriteTo(_ep, s);
-                    break;
-
-                case PeerEndPointType.TorAddress:
-                    {
-                        byte[] buffer = Encoding.UTF8.GetBytes(_torAddress);
-
-                        s.WriteByte(Convert.ToByte(buffer.Length));
-                        s.Write(buffer, 0, buffer.Length);
-                    }
-                    break;
-            }
+            _endPoint.WriteTo(bW);
         }
 
         public override bool Equals(object obj)
@@ -153,50 +80,31 @@ namespace MeshCore.Network.DHT
             if (other == null)
                 return false;
 
-            if (_userId != other._userId)
-                return false;
-
-            if (_type != other._type)
-                return false;
-
-            switch (_type)
-            {
-                case PeerEndPointType.IPEndPoint:
-                    if (!_ep.Equals(other._ep))
-                        return false;
-
-                    break;
-
-                case PeerEndPointType.TorAddress:
-                    if (_torAddress != other._torAddress)
-                        return false;
-
-                    break;
-            }
-
-            return true;
+            return _endPoint.Equals(other._endPoint);
         }
 
         public override int GetHashCode()
         {
-            return _userId.GetHashCode();
+            return _endPoint.GetHashCode();
         }
 
         #endregion
 
         #region properties
 
-        public BinaryNumber UserId
-        { get { return _userId; } }
+        public EndPoint EndPoint
+        { get { return _endPoint; } }
 
-        public PeerEndPointType Type
-        { get { return _type; } }
+        public int EndPointPort
+        {
+            get
+            {
+                if (_endPoint.AddressFamily == AddressFamily.Unspecified)
+                    return (_endPoint as DomainEndPoint).Port;
 
-        public IPEndPoint IPEndPoint
-        { get { return _ep; } }
-
-        public string TorAddress
-        { get { return _torAddress; } }
+                return (_endPoint as IPEndPoint).Port;
+            }
+        }
 
         public DateTime DateAdded
         { get { return _dateAdded; } }
