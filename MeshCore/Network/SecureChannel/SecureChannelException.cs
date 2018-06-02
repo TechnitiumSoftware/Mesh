@@ -45,21 +45,21 @@ namespace MeshCore.Network.SecureChannel
         #region variable
 
         SecureChannelCode _code;
-        IPEndPoint _peerEP;
+        EndPoint _peerEP;
         BinaryNumber _peerUserId;
 
         #endregion
 
         #region constructor
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerUserId)
+        public SecureChannelException(SecureChannelCode code, EndPoint peerEP, BinaryNumber peerUserId)
         {
             _code = code;
             _peerEP = peerEP;
             _peerUserId = peerUserId;
         }
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerUserId, string message)
+        public SecureChannelException(SecureChannelCode code, EndPoint peerEP, BinaryNumber peerUserId, string message)
             : base(message)
         {
             _code = code;
@@ -67,7 +67,7 @@ namespace MeshCore.Network.SecureChannel
             _peerUserId = peerUserId;
         }
 
-        public SecureChannelException(SecureChannelCode code, IPEndPoint peerEP, BinaryNumber peerUserId, string message, Exception innerException)
+        public SecureChannelException(SecureChannelCode code, EndPoint peerEP, BinaryNumber peerUserId, string message, Exception innerException)
             : base(message, innerException)
         {
             _code = code;
@@ -86,7 +86,7 @@ namespace MeshCore.Network.SecureChannel
         public SecureChannelCode Code
         { get { return _code; } }
 
-        public IPEndPoint PeerEP
+        public EndPoint PeerEP
         { get { return _peerEP; } }
 
         public BinaryNumber PeerUserId

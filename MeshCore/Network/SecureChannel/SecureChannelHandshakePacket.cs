@@ -176,9 +176,9 @@ namespace MeshCore.Network.SecureChannel
             : base(s)
         {
             byte[] buffer = new byte[2];
-            OffsetStream.StreamRead(s, buffer, 0, 2);
+            s.ReadBytes(buffer, 0, 2);
             _ephemeralPublicKey = new byte[BitConverter.ToUInt16(buffer, 0)];
-            OffsetStream.StreamRead(s, _ephemeralPublicKey, 0, _ephemeralPublicKey.Length);
+            s.ReadBytes(_ephemeralPublicKey, 0, _ephemeralPublicKey.Length);
 
             _pskAuth = new BinaryNumber(s);
         }
@@ -275,7 +275,7 @@ namespace MeshCore.Network.SecureChannel
 
                         _publicKey = DEREncoding.EncodeRSAPublicKey(rsaPrivateKey);
 
-                        if (!SecureChannelStream.IsUserIdValid(_userId, _publicKey))
+                        if (!SecureChannelStream.IsUserIdValid(_publicKey, _userId))
                             throw new ArgumentException("UserId does not match with public key.");
 
                         using (MemoryStream mS = new MemoryStream())
@@ -285,7 +285,7 @@ namespace MeshCore.Network.SecureChannel
                             mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
                             mS.Position = 0;
 
-                            _signature = rsa.SignData(mS, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                            _signature = rsa.SignData(mS, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
                         }
                     }
                     break;
@@ -302,13 +302,13 @@ namespace MeshCore.Network.SecureChannel
 
             byte[] buffer = new byte[2];
 
-            OffsetStream.StreamRead(s, buffer, 0, 2);
+            s.ReadBytes(buffer, 0, 2);
             _publicKey = new byte[BitConverter.ToUInt16(buffer, 0)];
-            OffsetStream.StreamRead(s, _publicKey, 0, _publicKey.Length);
+            s.ReadBytes(_publicKey, 0, _publicKey.Length);
 
-            OffsetStream.StreamRead(s, buffer, 0, 2);
+            s.ReadBytes(buffer, 0, 2);
             _signature = new byte[BitConverter.ToUInt16(buffer, 0)];
-            OffsetStream.StreamRead(s, _signature, 0, _signature.Length);
+            s.ReadBytes(_signature, 0, _signature.Length);
         }
 
         #endregion
@@ -328,7 +328,7 @@ namespace MeshCore.Network.SecureChannel
 
         public bool IsSignatureValid(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello)
         {
-            if (!SecureChannelStream.IsUserIdValid(_userId, _publicKey))
+            if (!SecureChannelStream.IsUserIdValid(_publicKey, _userId))
                 return false;
 
             switch (serverHello.SupportedCiphers)
@@ -349,7 +349,7 @@ namespace MeshCore.Network.SecureChannel
                             mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
                             mS.Position = 0;
 
-                            return rsa.VerifyData(mS, _signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                            return rsa.VerifyData(mS, _signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
                         }
                     }
 

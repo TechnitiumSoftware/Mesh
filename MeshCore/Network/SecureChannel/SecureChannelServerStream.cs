@@ -40,8 +40,8 @@ namespace MeshCore.Network.SecureChannel
 
         #region constructor
 
-        public SecureChannelServerStream(Stream stream, IPEndPoint remotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, BinaryNumber userId, byte[] privateKey, IEnumerable<BinaryNumber> trustedUserIds)
-            : base(remotePeerEP, renegotiateAfterBytesSent, renegotiateAfterSeconds)
+        public SecureChannelServerStream(Stream stream, EndPoint remotePeerEP, EndPoint viaRemotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds, SecureChannelCipherSuite supportedCiphers, SecureChannelOptions options, byte[] preSharedKey, BinaryNumber userId, byte[] privateKey, IEnumerable<BinaryNumber> trustedUserIds)
+            : base(remotePeerEP, viaRemotePeerEP, renegotiateAfterBytesSent, renegotiateAfterSeconds)
         {
             _supportedCiphers = supportedCiphers;
             _options = options;

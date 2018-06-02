@@ -65,7 +65,7 @@ FEATURES-
 <---------------------------------------------------------------------------------------> key exchange + PSK auth done
           master key = HMACSHA256(server nonce + client nonce, derived key)
 <---------------------------------------------------------------------------------------> encryption layer ON
-                                                (optional client authentication)
+                                                (optional client authentication based on hello options)
                                                 userId +
                                                 client public key +
                                                 signature(client ephemeral public key + 
@@ -115,9 +115,10 @@ namespace MeshCore.Network.SecureChannel
         const byte HEADER_FLAG_RENEGOTIATE = 1;
         const byte HEADER_FLAG_CLOSE_CHANNEL = 2;
 
-        readonly protected static RandomNumberGenerator _rnd = new RNGCryptoServiceProvider();
+        readonly protected static RandomNumberGenerator _rng = new RNGCryptoServiceProvider();
 
-        readonly protected IPEndPoint _remotePeerEP;
+        readonly protected EndPoint _remotePeerEP;
+        readonly EndPoint _viaRemotePeerEP;
         protected BinaryNumber _remotePeerUserId;
 
         //io & crypto related
@@ -165,9 +166,10 @@ namespace MeshCore.Network.SecureChannel
 
         #region constructor
 
-        public SecureChannelStream(IPEndPoint remotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds)
+        public SecureChannelStream(EndPoint remotePeerEP, EndPoint viaRemotePeerEP, int renegotiateAfterBytesSent, int renegotiateAfterSeconds)
         {
             _remotePeerEP = remotePeerEP;
+            _viaRemotePeerEP = viaRemotePeerEP;
             _renegotiateAfterBytesSent = renegotiateAfterBytesSent;
             _renegotiateAfterSeconds = renegotiateAfterSeconds;
         }
@@ -210,45 +212,44 @@ namespace MeshCore.Network.SecureChannel
 
         #region static
 
+        public static byte[] GetPublicKeyFromPrivateKey(byte[] privateKey)
+        {
+            return DEREncoding.EncodeRSAPublicKey(DEREncoding.DecodeRSAPrivateKey(privateKey));
+        }
+
+        private static byte[] GenerateUserId(byte[] publicKey, byte[] random)
+        {
+            byte[] value;
+
+            using (HMAC hmac = new HMACSHA256(random))
+            {
+                value = hmac.ComputeHash(publicKey);
+            }
+
+            Buffer.BlockCopy(random, 0, value, 0, 4); //overwrite random 4 bytes at start
+
+            return value;
+        }
+
         public static BinaryNumber GenerateUserId(byte[] publicKey)
         {
             byte[] random = new byte[4];
-            _rnd.GetBytes(random);
+            _rng.GetBytes(random);
 
-            byte[] hashValue;
-
-            using (HMAC hash = new HMACSHA1(random))
-            {
-                hashValue = hash.ComputeHash(publicKey);
-            }
-
-            byte[] buffer = new byte[24];
-
-            Buffer.BlockCopy(random, 0, buffer, 0, 4);
-            Buffer.BlockCopy(hashValue, 0, buffer, 4, 20);
-
-            return new BinaryNumber(buffer);
+            return new BinaryNumber(GenerateUserId(publicKey, random));
         }
 
-        public static bool IsUserIdValid(BinaryNumber userId, byte[] publicKey)
+        public static bool IsUserIdValid(byte[] publicKey, BinaryNumber userId)
         {
-            if (userId.Value.Length != 24)
+            if (userId.Value.Length != 20)
                 return false;
 
             byte[] random = new byte[4];
-            byte[] hashValue = new byte[20];
-
             Buffer.BlockCopy(userId.Value, 0, random, 0, 4);
-            Buffer.BlockCopy(userId.Value, 4, hashValue, 0, 20);
 
-            BinaryNumber generatedHashValue;
+            byte[] generatedValue = GenerateUserId(publicKey, random);
 
-            using (HMAC hash = new HMACSHA1(random))
-            {
-                generatedHashValue = new BinaryNumber(hash.ComputeHash(publicKey));
-            }
-
-            return generatedHashValue.Equals(new BinaryNumber(hashValue));
+            return BinaryNumber.Equals(userId.Value, generatedValue);
         }
 
         #endregion
@@ -490,7 +491,7 @@ namespace MeshCore.Network.SecureChannel
                 //write padding
                 if (bytesPadding > 0)
                 {
-                    _rnd.GetBytes(_writeBufferPadding);
+                    _rng.GetBytes(_writeBufferPadding);
 
                     Buffer.BlockCopy(_writeBufferPadding, 0, _writeBufferData, _writeBufferPosition, bytesPadding);
                     _writeBufferPosition += bytesPadding;
@@ -526,7 +527,7 @@ namespace MeshCore.Network.SecureChannel
             //read secure channel packet
 
             //read first block to read the encrypted packet size
-            OffsetStream.StreamRead(_baseStream, _readEncryptedData, 0, _blockSizeBytes);
+            _baseStream.ReadBytes(_readEncryptedData, 0, _blockSizeBytes);
             _decryptor.TransformBlock(_readEncryptedData, 0, _blockSizeBytes, _readBufferData, 0);
             _readBufferPosition = _blockSizeBytes;
 
@@ -548,7 +549,7 @@ namespace MeshCore.Network.SecureChannel
                     int pendingBytes = pendingBlocks * _blockSizeBytes;
 
                     //read pending blocks
-                    OffsetStream.StreamRead(_baseStream, _readEncryptedData, _readBufferPosition, pendingBytes);
+                    _baseStream.ReadBytes(_readEncryptedData, _readBufferPosition, pendingBytes);
                     _decryptor.TransformBlock(_readEncryptedData, _readBufferPosition, pendingBytes, _readBufferData, _readBufferPosition);
                     _readBufferPosition += pendingBytes;
                 }
@@ -558,7 +559,7 @@ namespace MeshCore.Network.SecureChannel
                 while (dataLength > 0)
                 {
                     //read next block
-                    OffsetStream.StreamRead(_baseStream, _readEncryptedData, _readBufferPosition, _blockSizeBytes);
+                    _baseStream.ReadBytes(_readEncryptedData, _readBufferPosition, _blockSizeBytes);
                     _decryptor.TransformBlock(_readEncryptedData, _readBufferPosition, _blockSizeBytes, _readBufferData, _readBufferPosition);
                     _readBufferPosition += _blockSizeBytes;
 
@@ -568,7 +569,7 @@ namespace MeshCore.Network.SecureChannel
 
             //read auth hmac
             BinaryNumber authHMAC = new BinaryNumber(new byte[_authHMACSizeBytes]);
-            OffsetStream.StreamRead(_baseStream, authHMAC.Value, 0, _authHMACSizeBytes);
+            _baseStream.ReadBytes(authHMAC.Value, 0, _authHMACSizeBytes);
 
             //verify auth hmac with computed hmac
             BinaryNumber computedAuthHMAC = new BinaryNumber(_authHMACDecrypt.ComputeHash(_readEncryptedData, 0, _readBufferPosition));
@@ -718,8 +719,11 @@ namespace MeshCore.Network.SecureChannel
 
         #region properties
 
-        public IPEndPoint RemotePeerEP
+        public EndPoint RemotePeerEP
         { get { return _remotePeerEP; } }
+
+        public EndPoint ViaRemotePeerEP
+        { get { return _viaRemotePeerEP; } }
 
         public BinaryNumber RemotePeerUserId
         { get { return _remotePeerUserId; } }
