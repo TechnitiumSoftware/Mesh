@@ -39,9 +39,12 @@ namespace MeshCore.Network.DHT
 
         #region constructor
 
-        internal PeerEndPoint(EndPoint endPoint)
+        public PeerEndPoint(EndPoint endPoint)
         {
             _endPoint = endPoint;
+
+            if (_endPoint.AddressFamily == AddressFamily.InterNetworkV6)
+                (_endPoint as IPEndPoint).Address.ScopeId = 0;
         }
 
         public PeerEndPoint(BinaryReader bR)
@@ -86,6 +89,11 @@ namespace MeshCore.Network.DHT
         public override int GetHashCode()
         {
             return _endPoint.GetHashCode();
+        }
+
+        public override string ToString()
+        {
+            return _endPoint.ToString();
         }
 
         #endregion

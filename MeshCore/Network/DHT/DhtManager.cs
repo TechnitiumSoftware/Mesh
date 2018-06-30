@@ -232,6 +232,8 @@ namespace MeshCore.Network.DHT
                                     continue; //skip loopback networks
 
                                 _localNetworkDhtManagers.Add(new LocalNetworkDhtManager(network));
+
+                                Debug.Write(this.GetType().Name, "local network dht manager created: " + network.LocalIP.ToString());
                             }
                         }
                     }
@@ -702,6 +704,8 @@ namespace MeshCore.Network.DHT
 
                                 if (!remoteNodeEP.Equals(_dhtEndPoint))
                                 {
+                                    Debug.Write(this.GetType().Name, "dht node discovered: " + _dhtEndPoint.ToString());
+
                                     //add node
                                     _dhtNode.AddNode(remoteNodeEP);
                                 }

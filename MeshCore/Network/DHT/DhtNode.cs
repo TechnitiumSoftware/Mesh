@@ -154,6 +154,8 @@ namespace MeshCore.Network.DHT
             //try add remote node
             AddNode(remoteEP);
 
+            Debug.Write(this.GetType().Name, "query received from: " + remoteNodeEP.ToString() + "; type: " + query.Type.ToString());
+
             //process query
             switch (query.Type)
             {
@@ -209,8 +211,12 @@ namespace MeshCore.Network.DHT
                 query.WriteTo(new BinaryWriter(s));
                 s.Flush();
 
+                Debug.Write(this.GetType().Name, "query sent to: " + contact.ToString());
+
                 //read response
                 DhtRpcPacket response = new DhtRpcPacket(new BinaryReader(s));
+
+                Debug.Write(this.GetType().Name, "response received from: " + contact.ToString());
 
                 //auto add contact or update last seen time
                 {
@@ -291,6 +297,8 @@ namespace MeshCore.Network.DHT
 
                     lock (lockObj)
                     {
+                        int respondedAlphaContacts = 0;
+
                         //query each alpha contact async
                         foreach (NodeContact alphaContact in alphaContacts)
                         {
@@ -311,50 +319,53 @@ namespace MeshCore.Network.DHT
                                     {
                                         seenContacts.Remove(alphaContact);
                                     }
-
-                                    return;
                                 }
-
-                                //got reply!
-                                if ((queryType == DhtRpcType.FIND_PEERS) && (response.Peers.Length > 0))
+                                else
                                 {
-                                    lock (receivedPeers)
+                                    //got reply!
+                                    if ((queryType == DhtRpcType.FIND_PEERS) && (response.Peers.Length > 0))
                                     {
-                                        foreach (PeerEndPoint peer in response.Peers)
+                                        lock (receivedPeers)
                                         {
-                                            if (!receivedPeers.Contains(peer))
-                                                receivedPeers.Add(peer);
+                                            foreach (PeerEndPoint peer in response.Peers)
+                                            {
+                                                if (!receivedPeers.Contains(peer))
+                                                    receivedPeers.Add(peer);
+                                            }
                                         }
                                     }
-                                }
 
-                                //add alpha contact to responded contacts list
-                                lock (respondedContacts)
-                                {
-                                    if (!respondedContacts.Contains(alphaContact))
-                                        respondedContacts.Add(alphaContact);
-                                }
-
-                                //add received contacts to learned contacts list
-                                lock (seenContacts)
-                                {
-                                    lock (learnedNotQueriedContacts)
+                                    //add alpha contact to responded contacts list
+                                    lock (respondedContacts)
                                     {
-                                        foreach (NodeContact contact in response.Contacts)
+                                        if (!respondedContacts.Contains(alphaContact))
+                                            respondedContacts.Add(alphaContact);
+                                    }
+
+                                    //add received contacts to learned contacts list
+                                    lock (seenContacts)
+                                    {
+                                        lock (learnedNotQueriedContacts)
                                         {
-                                            if (!seenContacts.Contains(contact))
+                                            foreach (NodeContact contact in response.Contacts)
                                             {
-                                                seenContacts.Add(contact);
-                                                learnedNotQueriedContacts.Add(contact);
+                                                if (!seenContacts.Contains(contact))
+                                                {
+                                                    seenContacts.Add(contact);
+                                                    learnedNotQueriedContacts.Add(contact);
+                                                }
                                             }
                                         }
                                     }
                                 }
 
-                                //no pulse for final round to wait for all k contacts to respond. this allows any failed node contact to be removed from seen contacts list during the wait.
+                                //wait for all alpha contacts to respond and signal only when all contacts responded
                                 lock (lockObj)
                                 {
-                                    Monitor.Pulse(lockObj);
+                                    respondedAlphaContacts++;
+
+                                    if (respondedAlphaContacts == alphaContacts.Length)
+                                        Monitor.Pulse(lockObj);
                                 }
                             });
 
@@ -481,6 +492,8 @@ namespace MeshCore.Network.DHT
 
             lock (peers)
             {
+                int respondedContacts = 0;
+
                 foreach (NodeContact contact in contacts)
                 {
                     Thread t = new Thread(delegate (object state)
@@ -496,7 +509,10 @@ namespace MeshCore.Network.DHT
                                         peers.Add(peer);
                                 }
 
-                                Monitor.Pulse(peers);
+                                respondedContacts++;
+
+                                if (respondedContacts == contacts.Length)
+                                    Monitor.Pulse(peers);
                             }
                         }
                     });
@@ -557,6 +573,8 @@ namespace MeshCore.Network.DHT
 
             if (_routingTable.AddContact(contact))
             {
+                Debug.Write(this.GetType().Name, "node contact added: " + contact.ToString());
+
                 ThreadPool.QueueUserWorkItem(delegate (object state)
                 {
                     Query(DhtRpcPacket.CreatePingPacket(_currentNode), contact);
