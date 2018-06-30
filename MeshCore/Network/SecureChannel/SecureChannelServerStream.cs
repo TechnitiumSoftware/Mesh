@@ -216,12 +216,9 @@ namespace MeshCore.Network.SecureChannel
                         if (!clientAuth.IsSignatureValid(clientKeyExchange, serverHello, clientHello))
                             throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, _remotePeerEP, _remotePeerUserId);
 
-                        if (_trustedUserIds != null)
-                        {
-                            //check if client is trusted
-                            if (!clientAuth.IsTrustedUserId(_trustedUserIds))
-                                throw new SecureChannelException(SecureChannelCode.UntrustedRemotePeerUserId, _remotePeerEP, _remotePeerUserId);
-                        }
+                        //check if client is trusted
+                        if (!clientAuth.IsTrustedUserId(_trustedUserIds))
+                            throw new SecureChannelException(SecureChannelCode.UntrustedRemotePeerUserId, _remotePeerEP, _remotePeerUserId);
                     }
 
                     //write server auth

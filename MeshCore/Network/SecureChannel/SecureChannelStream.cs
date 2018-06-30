@@ -228,7 +228,10 @@ namespace MeshCore.Network.SecureChannel
 
             Buffer.BlockCopy(random, 0, value, 0, 4); //overwrite random 4 bytes at start
 
-            return value;
+            byte[] userId = new byte[20];
+            Buffer.BlockCopy(value, 0, userId, 0, 20);
+
+            return userId;
         }
 
         public static BinaryNumber GenerateUserId(byte[] publicKey)
@@ -583,21 +586,6 @@ namespace MeshCore.Network.SecureChannel
             return _readBufferLength - _readBufferPosition;
         }
 
-        private void RenegotiationTimerCallback(object state)
-        {
-            try
-            {
-                if (((_renegotiateAfterBytesSent > 0) && (_bytesSent > _renegotiateAfterBytesSent)) || ((_renegotiateAfterSeconds > 0) && (_connectedOn.AddSeconds(_renegotiateAfterSeconds) < DateTime.UtcNow)))
-                    RenegotiateNow();
-            }
-            catch
-            { }
-            finally
-            {
-                _renegotiationTimer.Change(RENEGOTIATION_TIMER_INTERVAL, Timeout.Infinite);
-            }
-        }
-
         #endregion
 
         #region public
@@ -711,7 +699,18 @@ namespace MeshCore.Network.SecureChannel
             if (_renegotiationTimer == null)
             {
                 if ((_renegotiateAfterBytesSent > 0) || (_renegotiateAfterSeconds > 0))
-                    _renegotiationTimer = new Timer(RenegotiationTimerCallback, null, RENEGOTIATION_TIMER_INTERVAL, Timeout.Infinite);
+                {
+                    _renegotiationTimer = new Timer(delegate (object state)
+                    {
+                        try
+                        {
+                            if (((_renegotiateAfterBytesSent > 0) && (_bytesSent > _renegotiateAfterBytesSent)) || ((_renegotiateAfterSeconds > 0) && (_connectedOn.AddSeconds(_renegotiateAfterSeconds) < DateTime.UtcNow)))
+                                RenegotiateNow();
+                        }
+                        catch
+                        { }
+                    }, null, RENEGOTIATION_TIMER_INTERVAL, RENEGOTIATION_TIMER_INTERVAL);
+                }
             }
         }
 

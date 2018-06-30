@@ -271,12 +271,12 @@ namespace MeshCore.Network.SecureChannel
                         rsa.ImportParameters(rsaPrivateKey);
 
                         if (rsa.KeySize != 2048)
-                            throw new ArgumentException("RSA key size is not valid for selected crypto option: " + serverHello.SupportedCiphers.ToString());
+                            throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, null, _userId, "RSA key size is not valid for selected crypto option: " + serverHello.SupportedCiphers.ToString());
 
                         _publicKey = DEREncoding.EncodeRSAPublicKey(rsaPrivateKey);
 
                         if (!SecureChannelStream.IsUserIdValid(_publicKey, _userId))
-                            throw new ArgumentException("UserId does not match with public key.");
+                            throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, null, _userId, "UserId does not match with public key.");
 
                         using (MemoryStream mS = new MemoryStream())
                         {
@@ -285,7 +285,7 @@ namespace MeshCore.Network.SecureChannel
                             mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
                             mS.Position = 0;
 
-                            _signature = rsa.SignData(mS, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+                            _signature = rsa.SignData(mS, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
                         }
                     }
                     break;
@@ -317,6 +317,9 @@ namespace MeshCore.Network.SecureChannel
 
         public bool IsTrustedUserId(IEnumerable<BinaryNumber> trustedUserIds)
         {
+            if (trustedUserIds == null)
+                return true; //trust any userId
+
             foreach (BinaryNumber trustedUserId in trustedUserIds)
             {
                 if (trustedUserId == _userId)
@@ -340,7 +343,7 @@ namespace MeshCore.Network.SecureChannel
                         rsa.ImportParameters(rsaPublicKey);
 
                         if (rsa.KeySize != 2048)
-                            throw new ArgumentException("RSA key size is not valid for selected crypto option: " + serverHello.SupportedCiphers.ToString());
+                            throw new SecureChannelException(SecureChannelCode.PeerAuthenticationFailed, null, _userId, "RSA key size is not valid for selected crypto option: " + serverHello.SupportedCiphers.ToString());
 
                         using (MemoryStream mS = new MemoryStream())
                         {
@@ -349,7 +352,7 @@ namespace MeshCore.Network.SecureChannel
                             mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
                             mS.Position = 0;
 
-                            return rsa.VerifyData(mS, _signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+                            return rsa.VerifyData(mS, _signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
                         }
                     }
 
