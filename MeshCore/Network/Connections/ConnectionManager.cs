@@ -208,16 +208,16 @@ namespace MeshCore.Network.Connections
                 {
                     case NetProxyType.Http:
                         _torController.ProxyType = TorProxyType.Http;
-                        _torController.ProxyHost = _node.ProxyAddress;
-                        _torController.ProxyPort = _node.ProxyPort;
-                        _torController.ProxyCredential = _node.ProxyCredentials;
+                        _torController.ProxyHost = _node.Proxy.Address;
+                        _torController.ProxyPort = _node.Proxy.Port;
+                        _torController.ProxyCredential = _node.Proxy.Credential;
                         break;
 
                     case NetProxyType.Socks5:
                         _torController.ProxyType = TorProxyType.Socks5;
-                        _torController.ProxyHost = _node.ProxyAddress;
-                        _torController.ProxyPort = _node.ProxyPort;
-                        _torController.ProxyCredential = _node.ProxyCredentials;
+                        _torController.ProxyHost = _node.Proxy.Address;
+                        _torController.ProxyPort = _node.Proxy.Port;
+                        _torController.ProxyCredential = _node.Proxy.Credential;
                         break;
                 }
             }
