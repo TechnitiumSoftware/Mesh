@@ -42,15 +42,15 @@ namespace MeshCore.Network.Connections
         PingRequest = 1,
         PingResponse = 2,
 
-        ConnectChannelNetwork = 4,
-        ChannelData = 5,
-        DisconnectChannel = 6,
-        ConnectChannelTunnel = 7,
-        ConnectChannelVirtualConnection = 8,
+        ConnectChannelNetwork = 3,
+        ChannelData = 4,
+        DisconnectChannel = 5,
+        ConnectChannelTunnel = 6,
+        ConnectChannelVirtualConnection = 7,
 
-        TcpRelayRegisterHostedNetwork = 9,
-        TcpRelayUnregisterHostedNetwork = 10,
-        TcpRelayReceivedNetworkPeers = 11
+        TcpRelayRegisterHostedNetwork = 8,
+        TcpRelayUnregisterHostedNetwork = 9,
+        TcpRelayReceivedNetworkPeers = 10
     }
 
     public class Connection : IDisposable

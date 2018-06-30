@@ -66,13 +66,22 @@ namespace MeshCore.Message
 
         #region constructor
 
-        internal MessageItem(string info)
+        public MessageItem(string info)
         {
             _messageNumber = -1;
 
             _type = MessageType.Info;
             _messageDate = DateTime.UtcNow;
             _messageText = info;
+        }
+
+        public MessageItem(DateTime infoDate)
+        {
+            _messageNumber = -1;
+
+            _type = MessageType.Info;
+            _messageDate = infoDate;
+            _messageText = "";
         }
 
         internal MessageItem(DateTime messageDate, BinaryNumber senderUserId, MessageRecipient[] recipients, MessageType type, string messageText, byte[] imageThumbnail, string fileName, long fileSize, string filePath)

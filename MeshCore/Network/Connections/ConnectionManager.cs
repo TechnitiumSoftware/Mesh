@@ -137,7 +137,7 @@ namespace MeshCore.Network.Connections
             if (_node.Type == MeshNodeType.Tor)
             {
                 _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                localEP = new IPEndPoint(IPAddress.Loopback, _node.ProfileLocalPort);
+                localEP = new IPEndPoint(IPAddress.Loopback, _node.LocalPort);
             }
             else
             {
@@ -148,14 +148,14 @@ namespace MeshCore.Network.Connections
                         {
                             //below vista
                             _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                            localEP = new IPEndPoint(IPAddress.Any, _node.ProfileLocalPort);
+                            localEP = new IPEndPoint(IPAddress.Any, _node.LocalPort);
                         }
                         else
                         {
                             //vista & above
                             _tcpListener = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
                             _tcpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
-                            localEP = new IPEndPoint(IPAddress.IPv6Any, _node.ProfileLocalPort);
+                            localEP = new IPEndPoint(IPAddress.IPv6Any, _node.LocalPort);
                         }
                         break;
 
@@ -163,19 +163,19 @@ namespace MeshCore.Network.Connections
                         if (Socket.OSSupportsIPv6)
                         {
                             _tcpListener = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
-                            localEP = new IPEndPoint(IPAddress.IPv6Any, _node.ProfileLocalPort);
+                            localEP = new IPEndPoint(IPAddress.IPv6Any, _node.LocalPort);
                         }
                         else
                         {
                             _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                            localEP = new IPEndPoint(IPAddress.Any, _node.ProfileLocalPort);
+                            localEP = new IPEndPoint(IPAddress.Any, _node.LocalPort);
                         }
 
                         break;
 
                     default: //unknown
                         _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                        localEP = new IPEndPoint(IPAddress.Any, _node.ProfileLocalPort);
+                        localEP = new IPEndPoint(IPAddress.Any, _node.LocalPort);
                         break;
                 }
             }
@@ -284,33 +284,14 @@ namespace MeshCore.Network.Connections
             //start connectivity check timer
             _connectivityCheckTimer = new Timer(delegate (object state)
             {
-                try
-                {
-                    Thread t1 = new Thread(IPv4ConnectivityCheck);
-                    t1.IsBackground = true;
-                    t1.Start();
+                Thread t1 = new Thread(IPv4ConnectivityCheck);
+                t1.IsBackground = true;
+                t1.Start();
 
-                    Thread t2 = new Thread(IPv6ConnectivityCheck);
-                    t2.IsBackground = true;
-                    t2.Start();
-
-                    t1.Join();
-                    t2.Join();
-                }
-                catch
-                { }
-                finally
-                {
-                    //schedule next check
-                    if (_connectivityCheckTimer != null)
-                    {
-                        if (((_ipv4InternetStatus == InternetConnectivityStatus.NoInternetConnection) && (_ipv6InternetStatus == InternetConnectivityStatus.NoInternetConnection)) || (_upnpDeviceStatus == UPnPDeviceStatus.DeviceNotFound) || (_upnpDeviceStatus == UPnPDeviceStatus.PortForwardingFailed))
-                            _connectivityCheckTimer.Change(10000, Timeout.Infinite);
-                        else
-                            _connectivityCheckTimer.Change(CONNECTIVITY_CHECK_TIMER_INTERVAL, Timeout.Infinite);
-                    }
-                }
-            }, null, 1000, Timeout.Infinite);
+                Thread t2 = new Thread(IPv6ConnectivityCheck);
+                t2.IsBackground = true;
+                t2.Start();
+            }, null, 1000, CONNECTIVITY_CHECK_TIMER_INTERVAL);
         }
 
         #endregion
@@ -1445,7 +1426,7 @@ namespace MeshCore.Network.Connections
                 _upnpDeviceStatus = UPnPDeviceStatus.Identifying;
                 _ipv6InternetStatus = InternetConnectivityStatus.Identifying;
 
-                _connectivityCheckTimer.Change(1000, Timeout.Infinite);
+                _connectivityCheckTimer.Change(1000, CONNECTIVITY_CHECK_TIMER_INTERVAL);
             }
         }
 
