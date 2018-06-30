@@ -85,7 +85,28 @@ namespace MeshCore.Network.DHT
             _routingTable = new KBucket(_currentNode);
 
             //start health timer
-            _healthTimer = new Timer(HealthTimerCallback, null, HEALTH_CHECK_TIMER_INITIAL_INTERVAL, Timeout.Infinite);
+            _healthTimer = new Timer(delegate (object state)
+            {
+                try
+                {
+                    //remove expired data
+                    _currentNode.RemoveExpiredPeers();
+
+                    //check contact health
+                    _routingTable.CheckContactHealth(this);
+
+                    //refresh buckets
+                    _routingTable.RefreshBucket(this);
+
+                    //find closest contacts for current node id
+                    NodeContact[] initialContacts = _routingTable.GetKClosestContacts(_currentNode.NodeId);
+
+                    if (initialContacts.Length > 0)
+                        QueryFindNode(initialContacts, _currentNode.NodeId); //query manager auto add contacts that respond
+                }
+                catch
+                { }
+            }, null, HEALTH_CHECK_TIMER_INITIAL_INTERVAL, HEALTH_CHECK_TIMER_INTERVAL);
         }
 
         #endregion
@@ -108,34 +129,6 @@ namespace MeshCore.Network.DHT
         #endregion
 
         #region private
-
-        private void HealthTimerCallback(object state)
-        {
-            try
-            {
-                //remove expired data
-                _currentNode.RemoveExpiredPeers();
-
-                //check contact health
-                _routingTable.CheckContactHealth(this);
-
-                //refresh buckets
-                _routingTable.RefreshBucket(this);
-
-                //find closest contacts for current node id
-                NodeContact[] initialContacts = _routingTable.GetKClosestContacts(_currentNode.NodeId);
-
-                if (initialContacts.Length > 0)
-                    QueryFindNode(initialContacts, _currentNode.NodeId); //query manager auto add contacts that respond
-            }
-            catch
-            { }
-            finally
-            {
-                if (!_disposed)
-                    _healthTimer.Change(HEALTH_CHECK_TIMER_INTERVAL, Timeout.Infinite);
-            }
-        }
 
         private DhtRpcPacket ProcessQuery(DhtRpcPacket query, EndPoint remoteNodeEP)
         {
@@ -528,15 +521,12 @@ namespace MeshCore.Network.DHT
             BinaryReader bR = new BinaryReader(s);
             BinaryWriter bW = new BinaryWriter(s);
 
-            while (true)
-            {
-                DhtRpcPacket response = ProcessQuery(new DhtRpcPacket(bR), remoteNodeEP);
-                if (response == null)
-                    break;
+            DhtRpcPacket response = ProcessQuery(new DhtRpcPacket(bR), remoteNodeEP);
+            if (response == null)
+                return;
 
-                response.WriteTo(bW);
-                s.Flush();
-            }
+            response.WriteTo(bW);
+            s.Flush();
         }
 
         public void AddNode(IEnumerable<NodeContact> contacts)
@@ -615,7 +605,7 @@ namespace MeshCore.Network.DHT
         public void ForceHealthCheck()
         {
             if (_healthTimer != null)
-                _healthTimer.Change(1000, Timeout.Infinite);
+                _healthTimer.Change(1000, HEALTH_CHECK_TIMER_INTERVAL);
         }
 
         #endregion

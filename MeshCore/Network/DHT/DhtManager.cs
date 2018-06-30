@@ -30,11 +30,19 @@ using TechnitiumLibrary.Net.Proxy;
 
 namespace MeshCore.Network.DHT
 {
+    public enum DhtNetworkType
+    {
+        IPv4Internet = 1,
+        IPv6Internet = 2,
+        LocalNetwork = 3,
+        TorNetwork = 4
+    }
+
     public class DhtManager : IDisposable
     {
         #region variables
 
-        const string DHT_BOOTSTRAP_URL = "https://mesh.im/dht.bin";
+        const string DHT_BOOTSTRAP_URL = "https://mesh.im/dht-bootstrap.bin";
 
         const int WRITE_BUFFERED_STREAM_SIZE = 128;
 
@@ -125,7 +133,7 @@ namespace MeshCore.Network.DHT
             if (enableLocalNetworkDht)
             {
                 //start network watcher
-                _networkWatcher = new Timer(NetworkWatcherAsync, null, 1000, Timeout.Infinite);
+                _networkWatcher = new Timer(NetworkWatcherAsync, null, 1000, NETWORK_WATCHER_INTERVAL);
             }
         }
 
@@ -222,7 +230,6 @@ namespace MeshCore.Network.DHT
                                     continue; //skip loopback networks
 
                                 _localNetworkDhtManagers.Add(new LocalNetworkDhtManager(network));
-                                break;
                             }
                         }
                     }
@@ -230,11 +237,6 @@ namespace MeshCore.Network.DHT
             }
             catch
             { }
-            finally
-            {
-                if (!_disposed)
-                    _networkWatcher.Change(NETWORK_WATCHER_INTERVAL, Timeout.Infinite);
-            }
         }
 
         #endregion
@@ -262,7 +264,7 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        public void BeginFindPeers(BinaryNumber networkId, bool localNetworkOnly, Action<PeerEndPoint[]> callback)
+        public void BeginFindPeers(BinaryNumber networkId, bool localNetworkOnly, Action<DhtNetworkType, PeerEndPoint[]> callback)
         {
             if (!localNetworkOnly)
             {
@@ -273,7 +275,7 @@ namespace MeshCore.Network.DHT
                         {
                             PeerEndPoint[] peers = _ipv4InternetDhtNode.FindPeers(networkId);
                             if ((peers != null) && (peers.Length > 0))
-                                callback(peers);
+                                callback(DhtNetworkType.IPv4Internet, peers);
                         }
                         catch
                         { }
@@ -290,7 +292,7 @@ namespace MeshCore.Network.DHT
                         {
                             PeerEndPoint[] peers = _ipv6InternetDhtNode.FindPeers(networkId);
                             if ((peers != null) && (peers.Length > 0))
-                                callback(peers);
+                                callback(DhtNetworkType.IPv6Internet, peers);
                         }
                         catch
                         { }
@@ -308,7 +310,7 @@ namespace MeshCore.Network.DHT
                         {
                             PeerEndPoint[] peers = _torInternetDhtNode.FindPeers(networkId);
                             if ((peers != null) && (peers.Length > 0))
-                                callback(peers);
+                                callback(DhtNetworkType.TorNetwork, peers);
                         }
                         catch
                         { }
@@ -329,7 +331,7 @@ namespace MeshCore.Network.DHT
                         {
                             PeerEndPoint[] peers = localNetworkDhtManager.DhtNode.FindPeers(networkId);
                             if ((peers != null) && (peers.Length > 0))
-                                callback(peers);
+                                callback(DhtNetworkType.LocalNetwork, peers);
                         }
                         catch
                         { }
@@ -341,7 +343,7 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        public void BeginAnnounce(BinaryNumber networkId, bool localNetworkOnly, PeerEndPoint serviceEP, Action<PeerEndPoint[]> callback)
+        public void BeginAnnounce(BinaryNumber networkId, bool localNetworkOnly, PeerEndPoint serviceEP, Action<DhtNetworkType, PeerEndPoint[]> callback)
         {
             if (!localNetworkOnly)
             {
@@ -352,7 +354,7 @@ namespace MeshCore.Network.DHT
                         {
                             PeerEndPoint[] peers = _ipv4InternetDhtNode.Announce(networkId, serviceEP);
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
-                                callback(peers);
+                                callback(DhtNetworkType.IPv4Internet, peers);
                         }
                         catch
                         { }
@@ -369,7 +371,7 @@ namespace MeshCore.Network.DHT
                         {
                             PeerEndPoint[] peers = _ipv6InternetDhtNode.Announce(networkId, serviceEP);
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
-                                callback(peers);
+                                callback(DhtNetworkType.IPv6Internet, peers);
                         }
                         catch
                         { }
@@ -387,7 +389,7 @@ namespace MeshCore.Network.DHT
                         {
                             PeerEndPoint[] peers = _torInternetDhtNode.FindPeers(networkId);
                             if ((peers != null) && (peers.Length > 0))
-                                callback(peers);
+                                callback(DhtNetworkType.TorNetwork, peers);
                         }
                         catch
                         { }
@@ -408,7 +410,7 @@ namespace MeshCore.Network.DHT
                         {
                             PeerEndPoint[] peers = localNetworkDhtManager.DhtNode.Announce(networkId, serviceEP);
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
-                                callback(peers);
+                                callback(DhtNetworkType.LocalNetwork, peers);
                         }
                         catch
                         { }
@@ -436,6 +438,19 @@ namespace MeshCore.Network.DHT
                 return new EndPoint[] { };
 
             return _torInternetDhtNode.GetAllNodeEPs(false);
+        }
+
+        public EndPoint[] GetLanDhtNodes()
+        {
+            List<EndPoint> nodeEPs = new List<EndPoint>();
+
+            lock (_localNetworkDhtManagers)
+            {
+                foreach (LocalNetworkDhtManager localDht in _localNetworkDhtManagers)
+                    nodeEPs.AddRange(localDht.DhtNode.GetAllNodeEPs(false));
+            }
+
+            return nodeEPs.ToArray();
         }
 
         public EndPoint[] GetIPv4KRandomNodeEPs()
@@ -478,6 +493,22 @@ namespace MeshCore.Network.DHT
                     return 0;
 
                 return _torInternetDhtNode.TotalNodes;
+            }
+        }
+
+        public int LanDhtTotalNodes
+        {
+            get
+            {
+                int totalNodes = 0;
+
+                lock (_localNetworkDhtManagers)
+                {
+                    foreach (LocalNetworkDhtManager localDht in _localNetworkDhtManagers)
+                        totalNodes += localDht.DhtNode.TotalNodes;
+                }
+
+                return totalNodes;
             }
         }
 
@@ -645,10 +676,12 @@ namespace MeshCore.Network.DHT
                             {
                                 DhtNodeDiscoveryPacket packet = new DhtNodeDiscoveryPacket(new MemoryStream(buffer, false));
 
-                                if (!remoteNodeIP.Equals(_network.LocalIP) || (_dhtEndPoint.Port != packet.DhtPort))
+                                IPEndPoint remoteNodeEP = new IPEndPoint(remoteNodeIP, packet.DhtPort);
+
+                                if (!remoteNodeEP.Equals(_dhtEndPoint))
                                 {
                                     //add node
-                                    _dhtNode.AddNode(new IPEndPoint(remoteNodeIP, packet.DhtPort));
+                                    _dhtNode.AddNode(remoteNodeEP);
                                 }
                             }
                             catch
