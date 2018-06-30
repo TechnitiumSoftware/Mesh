@@ -39,6 +39,7 @@ namespace MeshCore
 
     public enum MeshNodeType : byte
     {
+        Unknown = 0,
         P2P = 1,
         Tor = 2
     }
@@ -76,7 +77,8 @@ namespace MeshCore
         BinaryNumber _userId; //serialize
         BinaryNumber _maskedUserId;
 
-        ushort _profileLocalPort; //serialize
+        ushort _localPort; //serialize
+        string _downloadFolder; //serialize
 
         DateTime _profileDateModified; //serialize
         string _profileDisplayName; //serialize
@@ -95,9 +97,6 @@ namespace MeshCore
         bool _allowOnlyLocalInboundInvitations = false; //serialize; this option works only when _allowInboundInvitations=true
 
         //proxy
-        string _proxyAddress = "127.0.0.1"; //serialize
-        ushort _proxyPort = 0; //serialize
-        NetworkCredential _proxyCredentials; //serialize
         NetProxy _proxy;
 
         //UI settings data
@@ -107,7 +106,7 @@ namespace MeshCore
         readonly Dictionary<BinaryNumber, MeshNetwork> _networks = new Dictionary<BinaryNumber, MeshNetwork>(); //serialize
 
         //user id DHT announce timer
-        const int USER_ID_ANNOUNCE_INTERVAL = 300000;
+        const int USER_ID_ANNOUNCE_INTERVAL = 60000;
         Timer _userIdAnnounceTimer;
 
         #endregion
@@ -126,15 +125,17 @@ namespace MeshCore
             }
         }
 
-        public MeshNode(MeshNodeType type, byte[] privateKey, SecureChannelCipherSuite supportedCiphers, ushort profileLocalPort, string profileDisplayName, string profileFolder, string torExecutableFilePath)
+        public MeshNode(MeshNodeType type, byte[] privateKey, SecureChannelCipherSuite supportedCiphers, ushort localPort, string profileDisplayName, string profileFolder, string downloadFolder, string torExecutableFilePath)
         {
             _type = type;
             _privateKey = privateKey;
             _supportedCiphers = supportedCiphers;
-            _profileLocalPort = profileLocalPort;
+            _localPort = localPort;
             _profileDateModified = DateTime.UtcNow;
             _profileDisplayName = profileDisplayName;
+
             _profileFolder = profileFolder;
+            _downloadFolder = downloadFolder;
             _torExecutableFilePath = torExecutableFilePath;
 
             GenerateNewUserId();
@@ -275,7 +276,8 @@ namespace MeshCore
                     _userId = new BinaryNumber(bR.BaseStream);
 
                     //
-                    _profileLocalPort = bR.ReadUInt16();
+                    _localPort = bR.ReadUInt16();
+                    _downloadFolder = bR.ReadShortString();
 
                     //
                     _profileDateModified = bR.ReadDate();
@@ -306,11 +308,8 @@ namespace MeshCore
                     _allowOnlyLocalInboundInvitations = bR.ReadBoolean();
 
                     //
-                    _proxyAddress = bR.ReadShortString();
-                    _proxyPort = bR.ReadUInt16();
-
                     if (bR.ReadBoolean())
-                        _proxyCredentials = new NetworkCredential(bR.ReadShortString(), bR.ReadShortString());
+                        _proxy = new NetProxy((NetProxyType)bR.ReadByte(), bR.ReadShortString(), bR.ReadUInt16(), (bR.ReadBoolean() ? new NetworkCredential(bR.ReadShortString(), bR.ReadShortString()) : null));
 
                     //
                     _appData = bR.ReadBuffer();
@@ -518,24 +517,10 @@ namespace MeshCore
 
         public void ConfigureProxy(NetProxyType proxyType, string proxyAddress, ushort proxyPort, NetworkCredential proxyCredentials)
         {
-            _proxyAddress = proxyAddress;
-            _proxyPort = proxyPort;
-            _proxyCredentials = proxyCredentials;
-
-            switch (proxyType)
-            {
-                case NetProxyType.Http:
-                    _proxy = new NetProxy(new WebProxyEx(new Uri("http://" + _proxyAddress + ":" + _proxyPort), false, new string[] { }, _proxyCredentials));
-                    break;
-
-                case NetProxyType.Socks5:
-                    _proxy = new NetProxy(new SocksClient(_proxyAddress, _proxyPort, _proxyCredentials));
-                    break;
-
-                default:
-                    _proxy = null;
-                    break;
-            }
+            if (proxyType == NetProxyType.None)
+                _proxy = null;
+            else
+                _proxy = new NetProxy(proxyType, proxyAddress, proxyPort, proxyCredentials);
 
             //update proxy for networks
             lock (_networks)
@@ -580,6 +565,11 @@ namespace MeshCore
             return _connectionManager.DhtManager.GetTorDhtNodes();
         }
 
+        public EndPoint[] GetLanDhtNodes()
+        {
+            return _connectionManager.DhtManager.GetLanDhtNodes();
+        }
+
         public EndPoint[] GetTcpRelayNodes()
         {
             return _connectionManager.GetTcpRelayNodes();
@@ -595,10 +585,11 @@ namespace MeshCore
             bW.Write((byte)_supportedCiphers);
 
             //
-            _userId.WriteTo(bW);
+            _userId.WriteTo(bW.BaseStream);
 
             //
-            bW.Write(_profileLocalPort);
+            bW.Write(_localPort);
+            bW.WriteShortString(_downloadFolder);
 
             //
             bW.Write(_profileDateModified);
@@ -611,14 +602,17 @@ namespace MeshCore
             bW.WriteBuffer(_profileDisplayImage);
 
             //
+            _ipv4BootstrapDhtNodes = _connectionManager.DhtManager.GetIPv4DhtNodes();
             bW.Write(_ipv4BootstrapDhtNodes.Length);
             foreach (EndPoint ep in _ipv4BootstrapDhtNodes)
                 ep.WriteTo(bW);
 
+            _ipv6BootstrapDhtNodes = _connectionManager.DhtManager.GetIPv6DhtNodes();
             bW.Write(_ipv6BootstrapDhtNodes.Length);
             foreach (EndPoint ep in _ipv6BootstrapDhtNodes)
                 ep.WriteTo(bW);
 
+            _torBootstrapDhtNodes = _connectionManager.DhtManager.GetTorDhtNodes();
             bW.Write(_torBootstrapDhtNodes.Length);
             foreach (EndPoint ep in _torBootstrapDhtNodes)
                 ep.WriteTo(bW);
@@ -629,18 +623,27 @@ namespace MeshCore
             bW.Write(_allowOnlyLocalInboundInvitations);
 
             //
-            bW.WriteShortString(_proxyAddress);
-            bW.Write(_proxyPort);
-
-            if (_proxyCredentials == null)
+            if (_proxy == null)
             {
                 bW.Write(false);
             }
             else
             {
                 bW.Write(true);
-                bW.WriteShortString(_proxyCredentials.UserName);
-                bW.WriteShortString(_proxyCredentials.Password);
+                bW.Write((byte)_proxy.Type);
+                bW.WriteShortString(_proxy.Address);
+                bW.Write(_proxy.Port);
+
+                if (_proxy.Credential == null)
+                {
+                    bW.Write(false);
+                }
+                else
+                {
+                    bW.Write(true);
+                    bW.WriteShortString(_proxy.Credential.UserName);
+                    bW.WriteShortString(_proxy.Credential.Password);
+                }
             }
 
             //
@@ -728,10 +731,16 @@ namespace MeshCore
         public SecureChannelCipherSuite SupportedCiphers
         { get { return _supportedCiphers; } }
 
-        public ushort ProfileLocalPort
+        public ushort LocalPort
         {
-            get { return _profileLocalPort; }
-            set { _profileLocalPort = value; }
+            get { return _localPort; }
+            set { _localPort = value; }
+        }
+
+        public string DownloadFolder
+        {
+            get { return _downloadFolder; }
+            set { _downloadFolder = value; }
         }
 
         internal DateTime ProfileDateModified
@@ -805,15 +814,6 @@ namespace MeshCore
         public NetProxy Proxy
         { get { return _proxy; } }
 
-        public string ProxyAddress
-        { get { return _proxyAddress; } }
-
-        public ushort ProxyPort
-        { get { return _proxyPort; } }
-
-        public NetworkCredential ProxyCredentials
-        { get { return _proxyCredentials; } }
-
         public byte[] AppData
         {
             get { return _appData; }
@@ -840,6 +840,9 @@ namespace MeshCore
 
         public int TorDhtTotalNodes
         { get { return _connectionManager.DhtManager.TorDhtTotalNodes; } }
+
+        public int LanDhtTotalNodes
+        { get { return _connectionManager.DhtManager.LanDhtTotalNodes; } }
 
         public InternetConnectivityStatus IPv4InternetStatus
         { get { return _connectionManager.IPv4InternetStatus; } }
