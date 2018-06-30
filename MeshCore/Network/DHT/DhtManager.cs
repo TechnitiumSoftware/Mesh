@@ -126,8 +126,10 @@ namespace MeshCore.Network.DHT
                         }
                     }
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
             });
 
             if (enableLocalNetworkDht)
@@ -235,8 +237,10 @@ namespace MeshCore.Network.DHT
                     }
                 }
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
         }
 
         #endregion
@@ -277,8 +281,10 @@ namespace MeshCore.Network.DHT
                             if ((peers != null) && (peers.Length > 0))
                                 callback(DhtNetworkType.IPv4Internet, peers);
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     });
 
                     t.IsBackground = true;
@@ -294,8 +300,10 @@ namespace MeshCore.Network.DHT
                             if ((peers != null) && (peers.Length > 0))
                                 callback(DhtNetworkType.IPv6Internet, peers);
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     });
 
                     t.IsBackground = true;
@@ -312,8 +320,10 @@ namespace MeshCore.Network.DHT
                             if ((peers != null) && (peers.Length > 0))
                                 callback(DhtNetworkType.TorNetwork, peers);
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     });
 
                     t.IsBackground = true;
@@ -333,8 +343,10 @@ namespace MeshCore.Network.DHT
                             if ((peers != null) && (peers.Length > 0))
                                 callback(DhtNetworkType.LocalNetwork, peers);
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     });
 
                     t.IsBackground = true;
@@ -356,8 +368,10 @@ namespace MeshCore.Network.DHT
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
                                 callback(DhtNetworkType.IPv4Internet, peers);
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     });
 
                     t.IsBackground = true;
@@ -373,8 +387,10 @@ namespace MeshCore.Network.DHT
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
                                 callback(DhtNetworkType.IPv6Internet, peers);
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     });
 
                     t.IsBackground = true;
@@ -391,8 +407,10 @@ namespace MeshCore.Network.DHT
                             if ((peers != null) && (peers.Length > 0))
                                 callback(DhtNetworkType.TorNetwork, peers);
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     });
 
                     t.IsBackground = true;
@@ -412,8 +430,10 @@ namespace MeshCore.Network.DHT
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
                                 callback(DhtNetworkType.LocalNetwork, peers);
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     });
 
                     t.IsBackground = true;
@@ -585,8 +605,10 @@ namespace MeshCore.Network.DHT
                         {
                             _udpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.AddMembership, new IPv6MulticastOption(IPAddress.Parse(IPV6_MULTICAST_IP), nic.GetIPProperties().GetIPv6Properties().Index));
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     }
                 }
 
@@ -684,13 +706,17 @@ namespace MeshCore.Network.DHT
                                     _dhtNode.AddNode(remoteNodeEP);
                                 }
                             }
-                            catch
-                            { }
+                            catch (Exception ex)
+                            {
+                                Debug.Write(this.GetType().Name, ex);
+                            }
                         }
                     }
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
             }
 
             private void AcceptTcpConnectionAsync(object parameter)
@@ -721,8 +747,9 @@ namespace MeshCore.Network.DHT
                                     _dhtNode.AcceptConnection(s, remoteNodeEP);
                                 }
                             }
-                            catch
+                            catch (Exception ex)
                             {
+                                Debug.Write(this.GetType().Name, ex);
                                 clientSocket.Dispose();
                             }
                         });
@@ -731,8 +758,10 @@ namespace MeshCore.Network.DHT
                         t.Start(socket);
                     }
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
             }
 
             private void Broadcast(byte[] buffer, int offset, int count)
@@ -748,8 +777,10 @@ namespace MeshCore.Network.DHT
                     {
                         _udpListener.SendTo(buffer, offset, count, SocketFlags.None, new IPEndPoint(broadcastIP, LOCAL_DISCOVERY_ANNOUNCE_PORT));
                     }
-                    catch
-                    { }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
                 }
                 else
                 {
@@ -758,8 +789,10 @@ namespace MeshCore.Network.DHT
                         _udpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.MulticastInterface, _network.Interface.GetIPProperties().GetIPv6Properties().Index);
                         _udpListener.SendTo(buffer, offset, count, SocketFlags.None, new IPEndPoint(IPAddress.Parse(IPV6_MULTICAST_IP), LOCAL_DISCOVERY_ANNOUNCE_PORT));
                     }
-                    catch
-                    { }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
                 }
             }
 
@@ -777,8 +810,10 @@ namespace MeshCore.Network.DHT
                             Thread.Sleep(ANNOUNCEMENT_RETRY_INTERVAL);
                     }
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
                 finally
                 {
                     if (!_disposed)
@@ -814,8 +849,10 @@ namespace MeshCore.Network.DHT
 
                     return new WriteBufferedStream(new NetworkStream(socket, true), WRITE_BUFFERED_STREAM_SIZE);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.Write(this.GetType().Name, ex);
+
                     if (socket != null)
                         socket.Dispose();
 

@@ -104,8 +104,10 @@ namespace MeshCore.Network.DHT
                     if (initialContacts.Length > 0)
                         QueryFindNode(initialContacts, _currentNode.NodeId); //query manager auto add contacts that respond
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
             }, null, HEALTH_CHECK_TIMER_INITIAL_INTERVAL, HEALTH_CHECK_TIMER_INTERVAL);
         }
 
@@ -227,8 +229,10 @@ namespace MeshCore.Network.DHT
 
                 return response;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.Write(this.GetType().Name, ex);
+
                 contact.IncrementRpcFailCount();
                 return null;
             }
