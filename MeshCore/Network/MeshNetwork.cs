@@ -115,6 +115,7 @@ namespace MeshCore.Network
         ReaderWriterLockSlim _peersLock; //only for group chat
 
         //DHT announce timer
+        const int DHT_ANNOUNCE_TIMER_INITIAL_INTERVAL = 5000;
         const int DHT_ANNOUNCE_TIMER_INTERVAL = 60000;
         Timer _dhtAnnounceTimer;
         bool _dhtAnnounceTimerIsRunning;
@@ -247,15 +248,24 @@ namespace MeshCore.Network
 
         #endregion
 
-        #region IDisposable support
-
-        bool _disposed = false;
+        #region IDisposable
 
         public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        bool _disposed = false;
+
+        protected virtual void Dispose(bool disposing)
+        {
             lock (this)
             {
-                if (!_disposed)
+                if (_disposed)
+                    return;
+
+                if (disposing)
                 {
                     //stop ping timer
                     if (_pingTimer != null)
@@ -272,14 +282,7 @@ namespace MeshCore.Network
                         try
                         {
                             foreach (KeyValuePair<BinaryNumber, Peer> peer in _peers)
-                            {
-                                try
-                                {
-                                    peer.Value.Dispose();
-                                }
-                                catch
-                                { }
-                            }
+                                peer.Value.Dispose();
 
                             _peers.Clear();
                         }
@@ -291,18 +294,18 @@ namespace MeshCore.Network
                         _peersLock.Dispose();
                     }
 
-                    //close message store
-                    if (_store != null)
-                        _store.Dispose();
-
                     if (_selfPeer != null)
                         _selfPeer.Dispose();
 
                     if (_otherPeer != null)
                         _otherPeer.Dispose();
 
-                    _disposed = true;
+                    //close message store
+                    if (_store != null)
+                        _store.Dispose();
                 }
+
+                _disposed = true;
             }
         }
 
@@ -436,6 +439,7 @@ namespace MeshCore.Network
 
                 //send delivery notification
                 new MeshNetworkPacketMessageDeliveryNotification(invitationMessage.MessageNumber).WriteTo(new BinaryWriter(secureChannel));
+                secureChannel.Flush();
 
                 return privateNetwork;
             }
@@ -499,10 +503,10 @@ namespace MeshCore.Network
             if (_status == MeshNetworkStatus.Online)
             {
                 //start ping timer
-                _pingTimer.Change(Timeout.Infinite, PING_TIMER_INTERVAL);
+                _pingTimer.Change(PING_TIMER_INTERVAL, PING_TIMER_INTERVAL);
 
                 //start dht announce
-                _dhtAnnounceTimer.Change(1000, DHT_ANNOUNCE_TIMER_INTERVAL);
+                _dhtAnnounceTimer.Change(DHT_ANNOUNCE_TIMER_INITIAL_INTERVAL, DHT_ANNOUNCE_TIMER_INTERVAL);
                 _dhtAnnounceTimerIsRunning = true;
 
                 //connectivity status update
@@ -534,8 +538,10 @@ namespace MeshCore.Network
 
                 _dhtLastUpdated = DateTime.UtcNow;
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
         }
 
         private void DhtCallback(DhtNetworkType networkType, PeerEndPoint[] peerEPs)
@@ -603,8 +609,10 @@ namespace MeshCore.Network
             {
                 SendMessageBroadcast(new MeshNetworkPacket(MeshNetworkPacketType.PingRequest));
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
         }
 
         internal void BeginMakeConnection(EndPoint peerEP, Connection fallbackViaConnection = null)
@@ -624,8 +632,10 @@ namespace MeshCore.Network
 
                     EstablishSecureChannelAndJoinNetwork(connection);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.Write(this.GetType().Name, ex);
+
                     if ((fallbackViaConnection != null) && !fallbackViaConnection.IsVirtualConnection)
                     {
                         try
@@ -635,8 +645,10 @@ namespace MeshCore.Network
 
                             EstablishSecureChannelAndJoinNetwork(virtualConnection);
                         }
-                        catch
-                        { }
+                        catch (Exception ex2)
+                        {
+                            Debug.Write(this.GetType().Name, ex2);
+                        }
                     }
                 }
             });
@@ -656,13 +668,16 @@ namespace MeshCore.Network
 
             try
             {
+                bool isInvitationPending = false;
                 byte[] psk;
                 ICollection<BinaryNumber> trustedUserIds;
 
                 switch (_type)
                 {
                     case MeshNetworkType.Private:
-                        if (IsInvitationPending())
+                        isInvitationPending = IsInvitationPending();
+
+                        if (isInvitationPending)
                             psk = _otherPeer.PeerUserId.Value;
                         else
                             psk = _networkSecret.Value;
@@ -687,8 +702,39 @@ namespace MeshCore.Network
                 //establish secure channel
                 SecureChannelStream secureChannel = new SecureChannelClientStream(channel, connection.RemotePeerEP, connection.ViaRemotePeerEP, RENEGOTIATE_AFTER_BYTES_SENT, RENEGOTIATE_AFTER_SECONDS, _connectionManager.Node.SupportedCiphers, SecureChannelOptions.PRE_SHARED_KEY_AUTHENTICATION_REQUIRED | SecureChannelOptions.CLIENT_AUTHENTICATION_REQUIRED, psk, _userId, _connectionManager.Node.PrivateKey, trustedUserIds);
 
-                //join network
-                JoinNetwork(secureChannel, connection);
+                if (isInvitationPending)
+                {
+                    //send invitation message
+                    MessageItem invitationMessage = GetPendingInvitationMessage();
+                    invitationMessage.GetMeshNetworkPacket().WriteTo(new BinaryWriter(secureChannel));
+                    secureChannel.Flush();
+
+                    //read delivery notification message
+                    MeshNetworkPacketMessageDeliveryNotification notification = MeshNetworkPacket.Parse(new BinaryReader(secureChannel)) as MeshNetworkPacketMessageDeliveryNotification;
+
+                    foreach (MessageRecipient rcpt in invitationMessage.Recipients)
+                    {
+                        if (rcpt.UserId.Equals(_otherPeer.PeerUserId))
+                        {
+                            rcpt.SetDeliveredStatus();
+                            break;
+                        }
+                    }
+
+                    //update message to store
+                    invitationMessage.WriteTo(_store);
+
+                    //notify ui
+                    RaiseEventMessageDeliveryNotification(_otherPeer, invitationMessage);
+
+                    //close channel
+                    secureChannel.Dispose();
+                }
+                else
+                {
+                    //join network
+                    JoinNetwork(secureChannel, connection);
+                }
             }
             catch (SecureChannelException ex)
             {
@@ -746,8 +792,10 @@ namespace MeshCore.Network
 
                 SendSecureChannelFailedInfoMessage(ex);
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.Write(this.GetType().Name, ex);
+
                 channel.Dispose();
             }
         }
@@ -799,9 +847,6 @@ namespace MeshCore.Network
             }
 
             peer.AddSession(channel, connection);
-
-            if (_type == MeshNetworkType.Private)
-                StopDhtAnnounce();
         }
 
         private ICollection<BinaryNumber> GetKnownPeerUserIdList()
@@ -946,28 +991,10 @@ namespace MeshCore.Network
             GoOnline();
         }
 
-        private void StopDhtAnnounce()
-        {
-            if (_status == MeshNetworkStatus.Online)
-            {
-                _dhtAnnounceTimer.Change(Timeout.Infinite, Timeout.Infinite);
-                _dhtAnnounceTimerIsRunning = false;
-            }
-        }
-
-        private void StartDhtAnnounce()
-        {
-            if (_status == MeshNetworkStatus.Online)
-            {
-                _dhtAnnounceTimer.Change(1000, DHT_ANNOUNCE_TIMER_INTERVAL);
-                _dhtAnnounceTimerIsRunning = true;
-            }
-        }
-
         private bool IsInvitationPending()
         {
             int totalMessages = _store.GetMessageCount();
-            if (totalMessages == 1)
+            if (totalMessages > 0)
             {
                 MessageItem msg = new MessageItem(_store, 0);
 
@@ -979,6 +1006,19 @@ namespace MeshCore.Network
             }
 
             return false;
+        }
+
+        private MessageItem GetPendingInvitationMessage()
+        {
+            MessageItem msg = new MessageItem(_store, 0);
+
+            if ((msg.Type == MessageType.TextMessage) && msg.SenderUserId.Equals(_userId))
+            {
+                if (msg.GetDeliveryStatus() != MessageDeliveryStatus.Delivered)
+                    return msg;
+            }
+
+            throw new MeshException("Pending invitation message not found.");
         }
 
         private MessageRecipient[] GetMessageRecipients()
@@ -1047,7 +1087,7 @@ namespace MeshCore.Network
             if (_status != MeshNetworkStatus.Online)
             {
                 //start ping timer
-                _pingTimer.Change(Timeout.Infinite, PING_TIMER_INTERVAL);
+                _pingTimer.Change(PING_TIMER_INTERVAL, PING_TIMER_INTERVAL);
 
                 //start dht announce
                 _dhtAnnounceTimer.Change(1000, DHT_ANNOUNCE_TIMER_INTERVAL);
@@ -1055,11 +1095,15 @@ namespace MeshCore.Network
 
                 _status = MeshNetworkStatus.Online;
 
-                //update self status
-                _selfPeer.RaiseEventStateChanged();
+                //async to avoid blocking UI thread
+                ThreadPool.QueueUserWorkItem(delegate (object state)
+                {
+                    //update self status
+                    _selfPeer.RaiseEventStateChanged();
 
-                //connectivity status update
-                UpdateConnectivityStatus();
+                    //connectivity status update
+                    UpdateConnectivityStatus();
+                });
             }
         }
 
@@ -1076,31 +1120,35 @@ namespace MeshCore.Network
 
                 _status = MeshNetworkStatus.Offline;
 
-                //disconnect all peers
-                if (_type == MeshNetworkType.Private)
+                //async to avoid blocking UI thread
+                ThreadPool.QueueUserWorkItem(delegate (object state)
                 {
-                    _selfPeer.Disconnect();
-                    _otherPeer.Disconnect();
-                }
-                else
-                {
-                    _peersLock.EnterReadLock();
-                    try
+                    //disconnect all peers
+                    if (_type == MeshNetworkType.Private)
                     {
-                        foreach (KeyValuePair<BinaryNumber, Peer> peer in _peers)
-                            peer.Value.Disconnect();
+                        _selfPeer.Disconnect();
+                        _otherPeer.Disconnect();
                     }
-                    finally
+                    else
                     {
-                        _peersLock.ExitReadLock();
+                        _peersLock.EnterReadLock();
+                        try
+                        {
+                            foreach (KeyValuePair<BinaryNumber, Peer> peer in _peers)
+                                peer.Value.Disconnect();
+                        }
+                        finally
+                        {
+                            _peersLock.ExitReadLock();
+                        }
                     }
-                }
 
-                //update self status
-                _selfPeer.RaiseEventStateChanged();
+                    //update self status
+                    _selfPeer.RaiseEventStateChanged();
 
-                //connectivity status update
-                UpdateConnectivityStatus();
+                    //connectivity status update
+                    UpdateConnectivityStatus();
+                });
             }
         }
 
@@ -1147,9 +1195,9 @@ namespace MeshCore.Network
             ThreadPool.QueueUserWorkItem(delegate (object state)
             {
                 SendMessageBroadcast(msg.GetMeshNetworkPacket());
-            });
 
-            RaiseEventMessageReceived(_selfPeer, msg);
+                RaiseEventMessageReceived(_selfPeer, msg);
+            });
         }
 
         public void SendInlineImage(string message, string filePath, byte[] imageThumbnail)
@@ -1162,9 +1210,9 @@ namespace MeshCore.Network
             ThreadPool.QueueUserWorkItem(delegate (object state)
             {
                 SendMessageBroadcast(msg.GetMeshNetworkPacket());
-            });
 
-            RaiseEventMessageReceived(_selfPeer, msg);
+                RaiseEventMessageReceived(_selfPeer, msg);
+            });
         }
 
         public void SendFileAttachment(string message, string filePath)
@@ -1177,9 +1225,9 @@ namespace MeshCore.Network
             ThreadPool.QueueUserWorkItem(delegate (object state)
             {
                 SendMessageBroadcast(msg.GetMeshNetworkPacket());
-            });
 
-            RaiseEventMessageReceived(_selfPeer, msg);
+                RaiseEventMessageReceived(_selfPeer, msg);
+            });
         }
 
         public MessageItem[] GetLatestMessages(int index, int count)
@@ -1273,15 +1321,19 @@ namespace MeshCore.Network
             {
                 File.Delete(Path.Combine(messageStoreFolder, _messageStoreId + ".index"));
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
 
             try
             {
                 File.Delete(Path.Combine(messageStoreFolder, _messageStoreId + ".data"));
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
 
             //unregister network from tcp relays
             _connectionManager.TcpRelayClientUnregisterHostedNetwork(_networkId);
@@ -1353,7 +1405,7 @@ namespace MeshCore.Network
 
         public override string ToString()
         {
-            return this.NetworkDisplayName;
+            return this.NetworkName;
         }
 
         #endregion
@@ -1366,7 +1418,7 @@ namespace MeshCore.Network
         public MeshNetworkType Type
         { get { return _type; } }
 
-        internal BinaryNumber NetworkId
+        public BinaryNumber NetworkId
         { get { return _networkId; } }
 
         public MeshNetworkStatus Status
@@ -1377,38 +1429,9 @@ namespace MeshCore.Network
             get
             {
                 if (_type == MeshNetworkType.Private)
-                    return _otherPeer.PeerUserId.ToString();
-                else
-                    return _networkName;
-            }
-        }
-
-        public string NetworkDisplayName
-        {
-            get
-            {
-                if (_type == MeshNetworkType.Private)
                 {
                     if (_otherPeer.ProfileDisplayName != null)
                         return _otherPeer.ProfileDisplayName;
-
-                    return _otherPeer.PeerUserId.ToString();
-                }
-                else
-                {
-                    return _networkName;
-                }
-            }
-        }
-
-        public string NetworkDisplayTitle
-        {
-            get
-            {
-                if (_type == MeshNetworkType.Private)
-                {
-                    if (_otherPeer.ProfileDisplayName != null)
-                        return _otherPeer.ProfileDisplayName + " [" + _otherPeer.PeerUserId.ToString() + "]";
 
                     return _otherPeer.PeerUserId.ToString();
                 }
@@ -1522,9 +1545,9 @@ namespace MeshCore.Network
                 string infoText;
 
                 if (_groupLockNetwork)
-                    infoText = "Mesh group network was locked.";
+                    infoText = "Mesh group network was locked by " + _selfPeer.ProfileDisplayName;
                 else
-                    infoText = "Mesh group network was unlocked.";
+                    infoText = "Mesh group network was unlocked by " + _selfPeer.ProfileDisplayName;
 
                 MessageItem msg = new MessageItem(DateTime.UtcNow, _userId, null, MessageType.Info, infoText, null, null, 0, null);
                 msg.WriteTo(_store);
@@ -1603,12 +1626,21 @@ namespace MeshCore.Network
 
             #region IDisposable
 
+            public void Dispose()
+            {
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+
             bool _isDisposing = false;
             bool _disposed = false;
 
-            public void Dispose()
+            protected virtual void Dispose(bool disposing)
             {
-                if (!_disposed)
+                if (_disposed)
+                    return;
+
+                if (disposing)
                 {
                     _isDisposing = true;
 
@@ -1626,9 +1658,9 @@ namespace MeshCore.Network
                     }
 
                     _sessionsLock.Dispose();
-
-                    _disposed = true;
                 }
+
+                _disposed = true;
             }
 
             #endregion
@@ -1880,14 +1912,16 @@ namespace MeshCore.Network
 
                 if (disconnectedPeerList.Count > 0)
                     _connectivityStatus = PeerConnectivityStatus.PartialMeshNetwork;
-                else
+                else if ((connectedPeerList != null) && (connectedPeerList.Count > 0))
                     _connectivityStatus = PeerConnectivityStatus.FullMeshNetwork;
+                else
+                    _connectivityStatus = PeerConnectivityStatus.NoNetwork;
 
                 //keep a copy for UI
                 _disconnectedPeerList = disconnectedPeerList;
 
-                if (oldStatus != _connectivityStatus)
-                    RaiseEventConnectivityStatusChanged();
+                //notify UI
+                RaiseEventConnectivityStatusChanged();
             }
 
             private void ReSendUndeliveredMessages(Session session)
@@ -1958,9 +1992,9 @@ namespace MeshCore.Network
                             //file transfer failed
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
-
+                        Debug.Write(this.GetType().Name, ex);
                     }
                 });
 
@@ -2143,14 +2177,23 @@ namespace MeshCore.Network
 
                 #region IDisposable
 
+                public void Dispose()
+                {
+                    Dispose(true);
+                    GC.SuppressFinalize(this);
+                }
+
                 bool _isDisposing = false;
                 bool _disposed = false;
 
-                public void Dispose()
+                protected virtual void Dispose(bool disposing)
                 {
                     lock (this)
                     {
-                        if (!_disposed)
+                        if (_disposed)
+                            return;
+
+                        if (disposing)
                         {
                             _isDisposing = true;
 
@@ -2164,18 +2207,18 @@ namespace MeshCore.Network
                             }
 
                             //close base secure channel
+                            _channel?.Dispose();
+
+                            //remove session
                             try
                             {
-                                _channel.Dispose();
+                                _peer.RemoveSession(this);
                             }
                             catch
                             { }
-
-                            //remove session
-                            _peer.RemoveSession(this);
-
-                            _disposed = true;
                         }
+
+                        _disposed = true;
                     }
                 }
 
@@ -2192,8 +2235,10 @@ namespace MeshCore.Network
                         _channel.Write(data, offset, count);
                         _channel.Flush();
                     }
-                    catch
-                    { }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
                     finally
                     {
                         Monitor.Exit(_channel);
@@ -2210,8 +2255,10 @@ namespace MeshCore.Network
                         _channel.Write(data, offset, count);
                         _channel.Flush();
                     }
-                    catch
-                    { }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
                     finally
                     {
                         Monitor.Exit(_channel);
@@ -2355,9 +2402,9 @@ namespace MeshCore.Network
                                             string infoText;
 
                                             if (_peer._network._groupLockNetwork)
-                                                infoText = "Mesh group network was locked.";
+                                                infoText = "Mesh group network was locked by " + _peer.ProfileDisplayName;
                                             else
-                                                infoText = "Mesh group network was unlocked.";
+                                                infoText = "Mesh group network was unlocked by " + _peer.ProfileDisplayName;
 
                                             MessageItem msg = new MessageItem(DateTime.UtcNow, _peer._peerUserId, null, MessageType.Info, infoText, null, null, 0, null);
                                             msg.WriteTo(_peer._network._store);
@@ -2438,8 +2485,10 @@ namespace MeshCore.Network
                                                         }
                                                     }
                                                 }
-                                                catch
-                                                { }
+                                                catch (Exception ex)
+                                                {
+                                                    Debug.Write(this.GetType().Name, ex);
+                                                }
                                             });
                                         }
                                         break;
@@ -2474,8 +2523,10 @@ namespace MeshCore.Network
                         //gracefull secure channel disconnection done
                         Dispose();
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Debug.Write(this.GetType().Name, ex);
+
                         Dispose();
 
                         //try reconnection due to unexpected channel closure (mostly read timed out exception)
@@ -2567,8 +2618,10 @@ namespace MeshCore.Network
                     {
                         _channel.Dispose();
                     }
-                    catch
-                    { }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
                 }
 
                 public ICollection<MeshNetworkPeerInfo> GetConnectedPeerList()
@@ -2629,14 +2682,19 @@ namespace MeshCore.Network
                     {
                         lock (this)
                         {
-                            if (!_disposed)
+                            if (_disposed)
+                                return;
+
+                            if (disposing)
                             {
                                 try
                                 {
                                     _session.WriteDataPacket(_port, new byte[] { }, 0, 0);
                                 }
-                                catch
-                                { }
+                                catch (Exception ex)
+                                {
+                                    Debug.Write(this.GetType().Name, ex);
+                                }
 
                                 if (!_session._isDisposing)
                                 {
@@ -2647,9 +2705,9 @@ namespace MeshCore.Network
                                 }
 
                                 Monitor.PulseAll(this);
-
-                                _disposed = true;
                             }
+
+                            _disposed = true;
                         }
                     }
 
