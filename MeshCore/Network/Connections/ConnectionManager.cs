@@ -185,8 +185,10 @@ namespace MeshCore.Network.Connections
                 _tcpListener.Bind(localEP);
                 _tcpListener.Listen(10);
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.Write(this.GetType().Name, ex);
+
                 localEP.Port = 0;
 
                 _tcpListener.Bind(localEP);
@@ -271,14 +273,18 @@ namespace MeshCore.Network.Connections
                                         }
                                     }
                                 }
-                                catch
-                                { }
+                                catch (Exception ex)
+                                {
+                                    Debug.Write(this.GetType().Name, ex);
+                                }
                             }, nodeEP);
                         }
                     }
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
             }, null, Timeout.Infinite, TCP_RELAY_CLIENT_TIMER_INTERVAL);
 
             //start connectivity check timer
@@ -298,11 +304,20 @@ namespace MeshCore.Network.Connections
 
         #region IDisposable
 
-        bool _disposed = false;
-
         public void Dispose()
         {
-            if (!_disposed)
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        bool _disposed = false;
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            if (disposing)
             {
                 //shutdown tcp listener
                 if (_tcpListener != null)
@@ -329,17 +344,10 @@ namespace MeshCore.Network.Connections
                 }
 
                 foreach (Connection connection in connectionList)
-                {
-                    try
-                    {
-                        connection.Dispose();
-                    }
-                    catch
-                    { }
-                }
-
-                _disposed = true;
+                    connection.Dispose();
             }
+
+            _disposed = true;
         }
 
         #endregion
@@ -427,8 +435,10 @@ namespace MeshCore.Network.Connections
 
                             AcceptConnectionInitiateProtocol(s, remotePeerEP);
                         }
-                        catch
+                        catch (Exception ex)
                         {
+                            Debug.Write(this.GetType().Name, ex);
+
                             socket.Dispose();
                         }
                     });
@@ -438,8 +448,10 @@ namespace MeshCore.Network.Connections
                 }
                 while (true);
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
         }
 
         private Connection AddConnection(Stream s, BinaryNumber remotePeerId, EndPoint remotePeerEP)
@@ -649,6 +661,8 @@ namespace MeshCore.Network.Connections
                         s.WriteTimeout = WRITE_TIMEOUT;
                         s.ReadTimeout = READ_TIMEOUT;
 
+                        Debug.Write(this.GetType().Name, "MakeConnectionInitiateProtocol: connection made to " + remotePeerEP.ToString());
+
                         return connection;
 
                     default:
@@ -845,6 +859,8 @@ namespace MeshCore.Network.Connections
                         //set stream timeout
                         s.WriteTimeout = WRITE_TIMEOUT;
                         s.ReadTimeout = READ_TIMEOUT;
+
+                        Debug.Write(this.GetType().Name, "AcceptConnectionInitiateProtocol: connection accepted from " + remotePeerEP.ToString());
                     }
                     else
                     {
@@ -1035,8 +1051,10 @@ namespace MeshCore.Network.Connections
                     {
                         tcpRelayClientConnection.TcpRelayRegisterHostedNetwork(channelId);
                     }
-                    catch
-                    { }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
                 }
             }
         }
@@ -1051,8 +1069,10 @@ namespace MeshCore.Network.Connections
                     {
                         tcpRelayClientConnection.TcpRelayUnregisterHostedNetwork(channelId);
                     }
-                    catch
-                    { }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
                 }
             }
         }
@@ -1156,8 +1176,10 @@ namespace MeshCore.Network.Connections
                                 else
                                     _upnpDevice = null;
                             }
-                            catch
-                            { }
+                            catch (Exception ex)
+                            {
+                                Debug.Write(this.GetType().Name, ex);
+                            }
 
                             break;
                         }
@@ -1190,8 +1212,10 @@ namespace MeshCore.Network.Connections
                             return; //no use of doing port forwarding for private upnp ip address
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Debug.Write(this.GetType().Name, ex);
+
                         _upnpExternalIP = null;
                     }
 
@@ -1202,8 +1226,10 @@ namespace MeshCore.Network.Connections
                         newUPnPStatus = UPnPDeviceStatus.PortForwardingFailed;
                 }
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
             finally
             {
                 try
@@ -1285,8 +1311,10 @@ namespace MeshCore.Network.Connections
                     _ipv4InternetStatus = newInternetStatus;
                     _upnpDeviceStatus = newUPnPStatus;
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
             }
         }
 
@@ -1339,8 +1367,10 @@ namespace MeshCore.Network.Connections
                     }
                 }
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
             finally
             {
                 try
@@ -1377,8 +1407,10 @@ namespace MeshCore.Network.Connections
                     //update status
                     _ipv6InternetStatus = newInternetStatus;
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
             }
         }
 
@@ -1408,8 +1440,10 @@ namespace MeshCore.Network.Connections
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.Write(this.GetType().Name, ex);
+
                 _webCheckError = true;
                 _webCheckSuccess = false;
                 _ipv4ConnectivityCheckExternalEP = null;
