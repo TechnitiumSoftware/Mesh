@@ -201,11 +201,20 @@ namespace MeshCore
 
         #region IDisposable
 
-        bool _disposed = false;
-
         public void Dispose()
         {
-            if (!_disposed)
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        bool _disposed = false;
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            if (disposing)
             {
                 if (_userIdAnnounceTimer != null)
                     _userIdAnnounceTimer.Dispose();
@@ -222,9 +231,9 @@ namespace MeshCore
 
                 if (_connectionManager != null)
                     _connectionManager.Dispose();
-
-                _disposed = true;
             }
+
+            _disposed = true;
         }
 
         #endregion
@@ -363,6 +372,9 @@ namespace MeshCore
                 {
                     _networks.Add(network.NetworkId, network);
                 }
+
+                //notify UI
+                RaiseEventInvitationReceived(network);
             }
             else
             {
@@ -480,7 +492,7 @@ namespace MeshCore
 
             //trigger announce for new userId
             if (_userIdAnnounceTimer != null)
-                _userIdAnnounceTimer.Change(1000, USER_ID_ANNOUNCE_INTERVAL);
+                _userIdAnnounceTimer.Change(10000, USER_ID_ANNOUNCE_INTERVAL);
         }
 
         public void UpdateProfile(string profileDisplayName, MeshProfileStatus profileStatus, string profileStatusMessage)
