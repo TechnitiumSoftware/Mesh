@@ -18,6 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 using System;
+using System.Threading;
 
 namespace MeshCore
 {
@@ -40,21 +41,23 @@ namespace MeshCore
         public static void Write(string source, Exception ex)
         {
             if (_debug != null)
-            {
-                lock (_lockObj)
-                {
-                    _debug.Write("[" + DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss") + "] [" + source + "] " + ex.ToString() + "\r\n");
-                }
-            }
+                Write(source, ex.ToString());
         }
 
         public static void Write(string source, string message)
         {
             if (_debug != null)
             {
-                lock (_lockObj)
+                Monitor.Enter(_lockObj);
+                try
                 {
                     _debug.Write("[" + DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss") + "] [" + source + "] " + message + "\r\n");
+                }
+                catch
+                { }
+                finally
+                {
+                    Monitor.Exit(_lockObj);
                 }
             }
         }
