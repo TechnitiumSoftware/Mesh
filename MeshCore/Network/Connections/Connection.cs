@@ -29,8 +29,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
-using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Threading;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
@@ -96,15 +94,24 @@ namespace MeshCore.Network.Connections
 
         #endregion
 
-        #region IDisposable support
-
-        bool _disposed = false;
+        #region IDisposable
 
         public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        bool _disposed = false;
+
+        protected virtual void Dispose(bool disposing)
+        {
             lock (this)
             {
-                if (!_disposed)
+                if (_disposed)
+                    return;
+
+                if (disposing)
                 {
                     //dispose tcp relay mode timer
                     if (_tcpRelayClientModeTimer != null)
@@ -120,35 +127,21 @@ namespace MeshCore.Network.Connections
                     }
 
                     foreach (ChannelStream stream in streamList)
-                    {
-                        try
-                        {
-                            stream.Dispose();
-                        }
-                        catch
-                        { }
-                    }
+                        stream.Dispose();
 
                     //dispose base stream
-                    Monitor.Enter(_baseStream);
-                    try
+                    lock (_baseStream)
                     {
                         _baseStream.Dispose();
                     }
-                    catch
-                    { }
-                    finally
-                    {
-                        Monitor.Exit(_baseStream);
-                    }
-
-                    _disposed = true;
 
                     _connectionManager.ConnectionDisposed(this);
 
                     if (_hasRegisteredHostedNetwork)
                         _connectionManager.TcpRelayServerUnregisterAllHostedNetworks(this);
                 }
+
+                _disposed = true;
             }
         }
 
@@ -248,8 +241,10 @@ namespace MeshCore.Network.Connections
                                             //done async since the call is blocking and will block the current read thread which can cause DOS
                                             _connectionManager.Node.MeshNetworkRequest(this, channel.ChannelId, channel);
                                         }
-                                        catch
+                                        catch (Exception ex)
                                         {
+                                            Debug.Write(this.GetType().Name, ex);
+
                                             channel.Dispose();
                                         }
                                     });
@@ -381,8 +376,10 @@ namespace MeshCore.Network.Connections
 
                                             joint.Start();
                                         }
-                                        catch
+                                        catch (Exception ex)
                                         {
+                                            Debug.Write(this.GetType().Name, ex);
+
                                             remoteChannel1.Dispose();
                                         }
                                     }
@@ -421,8 +418,10 @@ namespace MeshCore.Network.Connections
                                             {
                                                 _connectionManager.AcceptConnectionInitiateProtocol(channel, ConvertChannelIdToEp(channel.ChannelId));
                                             }
-                                            catch
+                                            catch (Exception ex)
                                             {
+                                                Debug.Write(this.GetType().Name, ex);
+
                                                 channel.Dispose();
                                             }
                                         });
@@ -482,8 +481,10 @@ namespace MeshCore.Network.Connections
                     }
                 }
             }
-            catch
-            { }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
             finally
             {
                 Dispose();
@@ -686,7 +687,10 @@ namespace MeshCore.Network.Connections
             {
                 lock (this)
                 {
-                    if (!_disposed)
+                    if (_disposed)
+                        return;
+
+                    if (disposing)
                     {
                         if (!_disconnected)
                         {
@@ -703,11 +707,13 @@ namespace MeshCore.Network.Connections
                             catch
                             { }
                         }
-
-                        _disposed = true;
-                        Monitor.PulseAll(this);
                     }
+
+                    _disposed = true;
+                    Monitor.PulseAll(this);
                 }
+
+                base.Dispose(disposing);
             }
 
             #endregion
