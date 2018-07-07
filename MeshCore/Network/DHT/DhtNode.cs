@@ -115,17 +115,26 @@ namespace MeshCore.Network.DHT
 
         #region IDisposable
 
-        bool _disposed = false;
-
         public void Dispose()
         {
-            if (!_disposed)
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        bool _disposed = false;
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            if (disposing)
             {
                 if (_healthTimer != null)
                     _healthTimer.Dispose();
-
-                _disposed = true;
             }
+
+            _disposed = true;
         }
 
         #endregion

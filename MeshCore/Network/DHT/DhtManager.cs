@@ -143,11 +143,20 @@ namespace MeshCore.Network.DHT
 
         #region IDisposable
 
-        bool _disposed = false;
-
         public void Dispose()
         {
-            if (!_disposed)
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        bool _disposed = false;
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            if (disposing)
             {
                 if (_networkWatcher != null)
                     _networkWatcher.Dispose();
@@ -168,9 +177,9 @@ namespace MeshCore.Network.DHT
 
                 if (_torInternetDhtNode != null)
                     _torInternetDhtNode.Dispose();
-
-                _disposed = true;
             }
+
+            _disposed = true;
         }
 
         #endregion
@@ -632,11 +641,20 @@ namespace MeshCore.Network.DHT
 
             #region IDisposable
 
-            bool _disposed = false;
-
             public void Dispose()
             {
-                if (!_disposed)
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+
+            bool _disposed = false;
+
+            protected virtual void Dispose(bool disposing)
+            {
+                if (_disposed)
+                    return;
+
+                if (disposing)
                 {
                     if (_udpListener != null)
                         _udpListener.Dispose();
@@ -649,9 +667,9 @@ namespace MeshCore.Network.DHT
 
                     if (_announceTimer != null)
                         _announceTimer.Dispose();
-
-                    _disposed = true;
                 }
+
+                _disposed = true;
             }
 
             #endregion
@@ -853,10 +871,8 @@ namespace MeshCore.Network.DHT
 
                     return new WriteBufferedStream(new NetworkStream(socket, true), WRITE_BUFFERED_STREAM_SIZE);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Debug.Write(this.GetType().Name, ex);
-
                     if (socket != null)
                         socket.Dispose();
 
