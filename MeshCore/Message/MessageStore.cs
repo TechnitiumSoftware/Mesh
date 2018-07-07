@@ -63,27 +63,24 @@ namespace MeshCore.Message
             GC.SuppressFinalize(this);
         }
 
-        ~MessageStore()
-        {
-            Dispose(false);
-        }
-
         bool _disposed = false;
 
-        private void Dispose(bool disposing)
+        protected virtual void Dispose(bool disposing)
         {
-            if (!_disposed)
+            lock (_lock)
             {
-                lock (_lock)
+                if (_disposed)
+                    return;
+
+                if (disposing)
                 {
-                    _index.Dispose();
-                    _data.Dispose();
-
-                    for (int i = 0; i < _key.Length; i++)
-                        _key[i] = 255;
-
-                    _crypto.Dispose();
+                    _index?.Dispose();
+                    _data?.Dispose();
+                    _crypto?.Dispose();
                 }
+
+                for (int i = 0; i < _key.Length; i++)
+                    _key[i] = 255;
 
                 _disposed = true;
             }
@@ -117,6 +114,9 @@ namespace MeshCore.Message
         {
             lock (_lock)
             {
+                if (_disposed)
+                    return -1;
+
                 //encrypt message data
                 byte[] encryptedData;
                 using (MemoryStream mS = new MemoryStream())
@@ -163,6 +163,9 @@ namespace MeshCore.Message
         {
             lock (_lock)
             {
+                if (_disposed)
+                    return;
+
                 //seek to index location
                 int indexPosition = number * 4;
 
@@ -180,14 +183,14 @@ namespace MeshCore.Message
                 _data.Position = messageOffset;
 
                 //read data
-                BincodingDecoder decoder = new BincodingDecoder(_data);
+                BinaryReader bR = new BinaryReader(_data);
                 byte[] existingEncryptedData;
 
-                switch (decoder.DecodeNext().GetByteValue()) //version
+                switch (bR.ReadByte()) //version
                 {
                     case 1:
-                        decoder.DecodeNext();
-                        existingEncryptedData = decoder.DecodeNext().Value;
+                        bR.ReadBuffer(); //IV
+                        existingEncryptedData = bR.ReadBuffer();
                         break;
 
                     default:
@@ -255,6 +258,9 @@ namespace MeshCore.Message
         {
             lock (_lock)
             {
+                if (_disposed)
+                    return;
+
                 //seek to index location
                 int indexPosition = number * 4;
 
@@ -312,6 +318,9 @@ namespace MeshCore.Message
         {
             lock (_lock)
             {
+                if (_disposed)
+                    return -1;
+
                 return Convert.ToInt32(_index.Length / 4);
             }
         }
