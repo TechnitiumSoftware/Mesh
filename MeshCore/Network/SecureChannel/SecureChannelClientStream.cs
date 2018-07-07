@@ -61,7 +61,12 @@ namespace MeshCore.Network.SecureChannel
         {
             try
             {
-                WriteBufferedStream bufferedStream = new WriteBufferedStream(stream, 8 * 1024);
+                WriteBufferedStream bufferedStream;
+
+                if (!(stream is WriteBufferedStream))
+                    bufferedStream = new WriteBufferedStream(stream, 8 * 1024);
+                else
+                    bufferedStream = stream as WriteBufferedStream;
 
                 //write client hello
                 SecureChannelHandshakeHello clientHello = new SecureChannelHandshakeHello(_supportedCiphers, _options);
