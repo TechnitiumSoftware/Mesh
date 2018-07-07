@@ -160,8 +160,6 @@ namespace MeshCore.Network.SecureChannel
         int _readBufferLength;
         readonly byte[] _readEncryptedData = new byte[BUFFER_SIZE];
 
-        bool _secureChannelStreamClosed = false;
-
         #endregion
 
         #region constructor
@@ -182,30 +180,40 @@ namespace MeshCore.Network.SecureChannel
 
         protected override void Dispose(bool disposing)
         {
-            if (!_disposed)
+            if (_disposed)
+                return;
+
+            if (disposing)
             {
-                try
+                //send close channel signal
+                lock (_writeLock)
                 {
-                    _baseStream.Dispose();
-
-                    _renegotiationTimer.Dispose();
-
-                    _encryptor.Dispose();
-                    _decryptor.Dispose();
-
-                    _encryptionAlgo.Dispose();
-                    _decryptionAlgo.Dispose();
-
-                    _authHMACEncrypt.Dispose();
-                    _authHMACDecrypt.Dispose();
-                }
-                finally
-                {
-                    base.Dispose(disposing);
+                    try
+                    {
+                        FlushBuffer(HEADER_FLAG_CLOSE_CHANNEL);
+                    }
+                    catch
+                    { }
                 }
 
-                _disposed = true;
+                //dispose
+                _baseStream?.Dispose();
+
+                _renegotiationTimer?.Dispose();
+
+                _encryptor?.Dispose();
+                _decryptor?.Dispose();
+
+                _encryptionAlgo?.Dispose();
+                _decryptionAlgo?.Dispose();
+
+                _authHMACEncrypt?.Dispose();
+                _authHMACDecrypt?.Dispose();
             }
+
+            _disposed = true;
+
+            base.Dispose(disposing);
         }
 
         #endregion
@@ -261,7 +269,7 @@ namespace MeshCore.Network.SecureChannel
 
         public override bool CanRead
         {
-            get { return !_secureChannelStreamClosed; }
+            get { return !_disposed; }
         }
 
         public override bool CanSeek
@@ -271,7 +279,7 @@ namespace MeshCore.Network.SecureChannel
 
         public override bool CanWrite
         {
-            get { return !_secureChannelStreamClosed; }
+            get { return !_disposed; }
         }
 
         public override bool CanTimeout
@@ -325,7 +333,7 @@ namespace MeshCore.Network.SecureChannel
 
             lock (_writeLock)
             {
-                if (_secureChannelStreamClosed)
+                if (_disposed)
                     throw new ObjectDisposedException("SecureChannelStream"); //channel already closed
 
                 while (true)
@@ -357,7 +365,7 @@ namespace MeshCore.Network.SecureChannel
         {
             lock (_writeLock)
             {
-                if (_secureChannelStreamClosed)
+                if (_disposed)
                     throw new ObjectDisposedException("SecureChannelStream"); //channel already closed
 
                 FlushBuffer(HEADER_FLAG_NONE);
@@ -375,7 +383,7 @@ namespace MeshCore.Network.SecureChannel
 
                 while (bytesAvailableForRead < 1)
                 {
-                    if (_secureChannelStreamClosed)
+                    if (_disposed)
                         return 0; //channel closed; end of stream
 
                     try
@@ -441,26 +449,6 @@ namespace MeshCore.Network.SecureChannel
                     return bytesToRead;
                 }
             }
-        }
-
-        public override void Close()
-        {
-            lock (_writeLock)
-            {
-                if (_secureChannelStreamClosed)
-                    return; //channel already closed
-
-                try
-                {
-                    FlushBuffer(HEADER_FLAG_CLOSE_CHANNEL);
-                }
-                catch
-                { }
-
-                _secureChannelStreamClosed = true;
-            }
-
-            base.Close();
         }
 
         #endregion
@@ -594,7 +582,7 @@ namespace MeshCore.Network.SecureChannel
         {
             lock (_writeLock)
             {
-                if (_secureChannelStreamClosed)
+                if (_disposed)
                     return; //channel already closed
 
                 lock (_renegotiationLock)
@@ -707,8 +695,10 @@ namespace MeshCore.Network.SecureChannel
                             if (((_renegotiateAfterBytesSent > 0) && (_bytesSent > _renegotiateAfterBytesSent)) || ((_renegotiateAfterSeconds > 0) && (_connectedOn.AddSeconds(_renegotiateAfterSeconds) < DateTime.UtcNow)))
                                 RenegotiateNow();
                         }
-                        catch
-                        { }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+                        }
                     }, null, RENEGOTIATION_TIMER_INTERVAL, RENEGOTIATION_TIMER_INTERVAL);
                 }
             }
