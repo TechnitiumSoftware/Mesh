@@ -307,7 +307,6 @@ namespace MeshCore.Network.Connections
         public void Dispose()
         {
             Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         bool _disposed = false;
@@ -408,7 +407,7 @@ namespace MeshCore.Network.Connections
         {
             try
             {
-                do
+                while (true)
                 {
                     Socket socket = _tcpListener.Accept();
 
@@ -416,7 +415,7 @@ namespace MeshCore.Network.Connections
                     socket.SendTimeout = SOCKET_INITIAL_SEND_TIMEOUT;
                     socket.ReceiveTimeout = SOCKET_INITIAL_RECV_TIMEOUT;
 
-                    Thread t = new Thread(delegate (object state)
+                    ThreadPool.QueueUserWorkItem(delegate (object state)
                     {
                         try
                         {
@@ -442,11 +441,7 @@ namespace MeshCore.Network.Connections
                             socket.Dispose();
                         }
                     });
-
-                    t.IsBackground = true;
-                    t.Start();
                 }
-                while (true);
             }
             catch (Exception ex)
             {
@@ -992,7 +987,7 @@ namespace MeshCore.Network.Connections
             }
 
             //announce self on DHT for the hosted network
-            _dhtManager.BeginAnnounce(channelId, false, new PeerEndPoint(new IPEndPoint(IPAddress.Any, _localPort)), null);
+            _dhtManager.BeginAnnounce(channelId, false, new IPEndPoint(IPAddress.Any, _localPort), null);
         }
 
         public void TcpRelayServerUnregisterHostedNetwork(Connection connection, BinaryNumber channelId)
