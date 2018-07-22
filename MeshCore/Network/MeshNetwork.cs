@@ -253,7 +253,6 @@ namespace MeshCore.Network
         public void Dispose()
         {
             Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         bool _disposed = false;
@@ -434,8 +433,9 @@ namespace MeshCore.Network
                 }
 
                 //store the invitation message in network store
-                MessageItem msg = new MessageItem(secureChannel.RemotePeerUserId, invitationMessage);
-                msg.WriteTo(privateNetwork._store);
+                (new MessageItem("This private chat invitation was sent by " + connection.RemotePeerEP.ToString() + ".")).WriteTo(privateNetwork._store);
+                (new MessageItem(secureChannel.RemotePeerUserId, invitationMessage)).WriteTo(privateNetwork._store);
+                (new MessageItem("To accept this invitation, uncheck the 'Go Offline' option from the chat list context menu.")).WriteTo(privateNetwork._store);
 
                 //send delivery notification
                 new MeshNetworkPacketMessageDeliveryNotification(invitationMessage.MessageNumber).WriteTo(new BinaryWriter(secureChannel));
@@ -530,7 +530,7 @@ namespace MeshCore.Network
                 }
                 else
                 {
-                    _connectionManager.DhtManager.BeginAnnounce(_networkId, _localNetworkOnly, new PeerEndPoint(new IPEndPoint(IPAddress.Any, _connectionManager.LocalPort)), DhtCallback);
+                    _connectionManager.DhtManager.BeginAnnounce(_networkId, _localNetworkOnly, new IPEndPoint(IPAddress.Any, _connectionManager.LocalPort), DhtCallback);
 
                     //register network on tcp relays. tcp relays will auto announce network over DHT and register their network end point
                     _connectionManager.TcpRelayClientRegisterHostedNetwork(_networkId);
@@ -544,9 +544,9 @@ namespace MeshCore.Network
             }
         }
 
-        private void DhtCallback(DhtNetworkType networkType, PeerEndPoint[] peerEPs)
+        private void DhtCallback(DhtNetworkType networkType, ICollection<EndPoint> peerEPs)
         {
-            if (peerEPs.Length > 0)
+            if (peerEPs.Count > 0)
             {
                 switch (networkType)
                 {
@@ -555,10 +555,10 @@ namespace MeshCore.Network
                         {
                             _dhtIPv4Peers.Clear();
 
-                            foreach (PeerEndPoint peerEP in peerEPs)
+                            foreach (EndPoint peerEP in peerEPs)
                             {
-                                _dhtIPv4Peers.Add(peerEP.EndPoint);
-                                BeginMakeConnection(peerEP.EndPoint);
+                                _dhtIPv4Peers.Add(peerEP);
+                                BeginMakeConnection(peerEP);
                             }
                         }
                         break;
@@ -568,10 +568,10 @@ namespace MeshCore.Network
                         {
                             _dhtIPv6Peers.Clear();
 
-                            foreach (PeerEndPoint peerEP in peerEPs)
+                            foreach (EndPoint peerEP in peerEPs)
                             {
-                                _dhtIPv6Peers.Add(peerEP.EndPoint);
-                                BeginMakeConnection(peerEP.EndPoint);
+                                _dhtIPv6Peers.Add(peerEP);
+                                BeginMakeConnection(peerEP);
                             }
                         }
                         break;
@@ -579,10 +579,10 @@ namespace MeshCore.Network
                     case DhtNetworkType.LocalNetwork:
                         lock (_dhtLanPeers)
                         {
-                            foreach (PeerEndPoint peerEP in peerEPs)
+                            foreach (EndPoint peerEP in peerEPs)
                             {
-                                _dhtLanPeers.Add(peerEP.EndPoint);
-                                BeginMakeConnection(peerEP.EndPoint);
+                                _dhtLanPeers.Add(peerEP);
+                                BeginMakeConnection(peerEP);
                             }
                         }
                         break;
@@ -592,10 +592,10 @@ namespace MeshCore.Network
                         {
                             _dhtTorPeers.Clear();
 
-                            foreach (PeerEndPoint peerEP in peerEPs)
+                            foreach (EndPoint peerEP in peerEPs)
                             {
-                                _dhtTorPeers.Add(peerEP.EndPoint);
-                                BeginMakeConnection(peerEP.EndPoint);
+                                _dhtTorPeers.Add(peerEP);
+                                BeginMakeConnection(peerEP);
                             }
                         }
                         break;
@@ -623,7 +623,10 @@ namespace MeshCore.Network
             if (_localNetworkOnly && ((peerEP.AddressFamily == AddressFamily.Unspecified) || !NetUtilities.IsPrivateIP((peerEP as IPEndPoint).Address)))
                 return;
 
-            Thread t = new Thread(delegate (object state)
+            if (IsPeerConnected(peerEP))
+                return;
+
+            ThreadPool.QueueUserWorkItem(delegate (object state)
             {
                 try
                 {
@@ -652,9 +655,6 @@ namespace MeshCore.Network
                     }
                 }
             });
-
-            t.IsBackground = true;
-            t.Start();
         }
 
         private void EstablishSecureChannelAndJoinNetwork(Connection connection)
@@ -847,6 +847,34 @@ namespace MeshCore.Network
             }
 
             peer.AddSession(channel, connection);
+        }
+
+        private bool IsPeerConnected(EndPoint peerEP)
+        {
+            //check if peer already connected
+
+            if (_type == MeshNetworkType.Private)
+            {
+                return _otherPeer.IsOnline && _otherPeer.IsConnectedVia(peerEP);
+            }
+            else
+            {
+                _peersLock.EnterReadLock();
+                try
+                {
+                    foreach (KeyValuePair<BinaryNumber, Peer> peer in _peers)
+                    {
+                        if (peer.Value.IsOnline && peer.Value.IsConnectedVia(peerEP))
+                            return true;
+                    }
+                }
+                finally
+                {
+                    _peersLock.ExitReadLock();
+                }
+
+                return false;
+            }
         }
 
         private ICollection<BinaryNumber> GetKnownPeerUserIdList()
@@ -1492,13 +1520,23 @@ namespace MeshCore.Network
                 _localNetworkOnlyDateModified = DateTime.UtcNow;
                 _localNetworkOnly = value;
 
+                lock (_dhtIPv4Peers)
+                {
+                    _dhtIPv4Peers.Clear();
+                }
+
+                lock (_dhtIPv6Peers)
+                {
+                    _dhtIPv6Peers.Clear();
+                }
+
                 //notify UI
                 string infoText;
 
                 if (_localNetworkOnly)
-                    infoText = "Mesh group network updated to work only on local LAN networks.";
+                    infoText = "Mesh group network was updated to work only on local LAN networks by " + _selfPeer.ProfileDisplayName;
                 else
-                    infoText = "Mesh group network updated to work on Internet and local LAN networks.";
+                    infoText = "Mesh group network was updated to work on Internet and local LAN networks by " + _selfPeer.ProfileDisplayName;
 
                 MessageItem msg = new MessageItem(DateTime.UtcNow, _userId, null, MessageType.Info, infoText, null, null, 0, null);
                 msg.WriteTo(_store);
@@ -1629,7 +1667,6 @@ namespace MeshCore.Network
             public void Dispose()
             {
                 Dispose(true);
-                GC.SuppressFinalize(this);
             }
 
             bool _isDisposing = false;
@@ -1748,10 +1785,11 @@ namespace MeshCore.Network
                     RaiseEventStateChanged(); //notify UI that peer is online
                 }
 
-                //send profile & image to this session
+                //send profile, image & settings to this session
                 MeshNode node = _network._connectionManager.Node;
                 session.SendMessage(new MeshNetworkPacketProfile(node.ProfileDateModified, node.ProfileDisplayName, node.ProfileStatus, node.ProfileStatusMessage));
                 session.SendMessage(new MeshNetworkPacketProfileDisplayImage(node.ProfileDisplayImageDateModified, node.ProfileDisplayImage));
+                session.SendMessage(new MeshNetworkPacketLocalNetworkOnly(_network._localNetworkOnlyDateModified, _network._localNetworkOnly));
 
                 //peer exchange
                 _network.UpdateConnectivityStatus();
@@ -1765,6 +1803,7 @@ namespace MeshCore.Network
 
                     case MeshNetworkType.Group:
                         session.SendMessage(new MeshNetworkPacketGroupDisplayImage(_network._groupDisplayImageDateModified, _network._groupDisplayImage)); //group image feature
+                        session.SendMessage(new MeshNetworkPacketGroupLockNetwork(_network._groupLockNetworkDateModified, _network._groupLockNetwork)); //group lock setting
                         break;
                 }
             }
@@ -1811,6 +1850,25 @@ namespace MeshCore.Network
                 {
                     _sessionsLock.ExitReadLock();
                 }
+            }
+
+            internal bool IsConnectedVia(EndPoint peerEP)
+            {
+                _sessionsLock.EnterReadLock();
+                try
+                {
+                    foreach (Session session in _sessions)
+                    {
+                        if (session.RemotePeerEP.Equals(peerEP))
+                            return true;
+                    }
+                }
+                finally
+                {
+                    _sessionsLock.ExitReadLock();
+                }
+
+                return false;
             }
 
             internal MeshNetworkPeerInfo GetPeerInfo()
@@ -2180,7 +2238,6 @@ namespace MeshCore.Network
                 public void Dispose()
                 {
                     Dispose(true);
-                    GC.SuppressFinalize(this);
                 }
 
                 bool _isDisposing = false;
@@ -2311,13 +2368,14 @@ namespace MeshCore.Network
                                         if (localOnly.LocalNetworkOnlyDateModified > _peer._network._localNetworkOnlyDateModified)
                                         {
                                             _peer._network._localNetworkOnly = localOnly.LocalNetworkOnly;
+                                            _peer._network._localNetworkOnlyDateModified = localOnly.LocalNetworkOnlyDateModified;
 
                                             string infoText;
 
                                             if (_peer._network._localNetworkOnly)
-                                                infoText = "Mesh group network updated to work only on local LAN networks.";
+                                                infoText = "Mesh group network was updated to work only on local LAN networks by " + _peer.ProfileDisplayName;
                                             else
-                                                infoText = "Mesh group network updated to work on Internet and local LAN networks.";
+                                                infoText = "Mesh group network was updated to work on Internet and local LAN networks by " + _peer.ProfileDisplayName;
 
                                             MessageItem msg = new MessageItem(DateTime.UtcNow, _peer._peerUserId, null, MessageType.Info, infoText, null, null, 0, null);
                                             msg.WriteTo(_peer._network._store);
@@ -2398,6 +2456,7 @@ namespace MeshCore.Network
                                         if (groupLock.GroupLockNetworkDateModified > _peer._network._groupLockNetworkDateModified)
                                         {
                                             _peer._network._groupLockNetwork = groupLock.GroupLockNetwork;
+                                            _peer._network._groupLockNetworkDateModified = groupLock.GroupLockNetworkDateModified;
 
                                             string infoText;
 
@@ -2782,7 +2841,7 @@ namespace MeshCore.Network
                     public override int Read(byte[] buffer, int offset, int count)
                     {
                         if (count < 1)
-                            throw new ArgumentOutOfRangeException("Count must be atleast 1 byte.");
+                            throw new ArgumentOutOfRangeException("Count cannot be less than 1.");
 
                         lock (this)
                         {
@@ -2827,9 +2886,9 @@ namespace MeshCore.Network
 
                     #region private
 
-                    public void FeedReadBuffer(Stream s, int length, int timeout)
+                    public void FeedReadBuffer(Stream s, int count, int timeout)
                     {
-                        if (length < 1)
+                        if (count < 1)
                         {
                             Dispose();
                             return;
@@ -2837,13 +2896,13 @@ namespace MeshCore.Network
 
                         int readCount = _readBuffer.Length;
 
-                        while (length > 0)
+                        while (count > 0)
                         {
                             lock (this)
                             {
                                 if (_disposed)
                                 {
-                                    OffsetStream.StreamCopy(new OffsetStream(s, 0, length), Stream.Null, 1024); //remove unread data from the source stream
+                                    s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                                     throw new ObjectDisposedException("DataStream");
                                 }
 
@@ -2851,24 +2910,24 @@ namespace MeshCore.Network
                                 {
                                     if (!Monitor.Wait(this, timeout))
                                     {
-                                        OffsetStream.StreamCopy(new OffsetStream(s, 0, length), Stream.Null, 1024); //remove unread data from the source stream
+                                        s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                                         throw new IOException("DataStream FeedReadBuffer timed out.");
                                     }
 
                                     if (_readBufferCount > 0)
                                     {
-                                        OffsetStream.StreamCopy(new OffsetStream(s, 0, length), Stream.Null, 1024); //remove unread data from the source stream
+                                        s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                                         throw new IOException("DataStream FeedReadBuffer failed. Buffer not empty.");
                                     }
                                 }
 
-                                if (length < readCount)
-                                    readCount = length;
+                                if (count < readCount)
+                                    readCount = count;
 
                                 s.ReadBytes(_readBuffer, 0, readCount);
                                 _readBufferOffset = 0;
                                 _readBufferCount = readCount;
-                                length -= readCount;
+                                count -= readCount;
 
                                 Monitor.Pulse(this);
                             }
