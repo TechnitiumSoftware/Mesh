@@ -375,7 +375,7 @@ namespace MeshCore.Network.SecureChannel
         public override int Read(byte[] buffer, int offset, int count)
         {
             if (count < 1)
-                return 0;
+                throw new ArgumentOutOfRangeException("Count cannot be less than 1.");
 
             lock (_readLock)
             {
