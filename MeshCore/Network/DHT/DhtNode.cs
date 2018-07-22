@@ -118,7 +118,6 @@ namespace MeshCore.Network.DHT
         public void Dispose()
         {
             Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         bool _disposed = false;
@@ -175,7 +174,7 @@ namespace MeshCore.Network.DHT
                     return DhtRpcPacket.CreateFindNodePacketResponse(_currentNode, query.NetworkID, _routingTable.GetKClosestContacts(query.NetworkID));
 
                 case DhtRpcType.FIND_PEERS:
-                    PeerEndPoint[] peers = _currentNode.GetPeers(query.NetworkID);
+                    EndPoint[] peers = _currentNode.GetPeers(query.NetworkID);
                     if (peers.Length == 0)
                         return DhtRpcPacket.CreateFindPeersPacketResponse(_currentNode, query.NetworkID, _routingTable.GetKClosestContacts(query.NetworkID), peers);
                     else
@@ -187,11 +186,11 @@ namespace MeshCore.Network.DHT
                         EndPoint peerEP;
 
                         if (remoteNodeEP.AddressFamily == AddressFamily.Unspecified)
-                            peerEP = new DomainEndPoint((remoteNodeEP as DomainEndPoint).Address, query.Peers[0].EndPointPort);
+                            peerEP = new DomainEndPoint((remoteNodeEP as DomainEndPoint).Address, query.Peers[0].GetPort());
                         else
-                            peerEP = new IPEndPoint((remoteNodeEP as IPEndPoint).Address, query.Peers[0].EndPointPort);
+                            peerEP = new IPEndPoint((remoteNodeEP as IPEndPoint).Address, query.Peers[0].GetPort());
 
-                        _currentNode.StorePeer(query.NetworkID, new PeerEndPoint(peerEP));
+                        _currentNode.StorePeer(query.NetworkID, peerEP);
                     }
 
                     return DhtRpcPacket.CreateAnnouncePeerPacketResponse(_currentNode, query.NetworkID, _currentNode.GetPeers(query.NetworkID));
@@ -272,13 +271,13 @@ namespace MeshCore.Network.DHT
             List<NodeContact> seenContacts = new List<NodeContact>(initialContacts);
             List<NodeContact> learnedNotQueriedContacts = new List<NodeContact>(initialContacts);
             List<NodeContact> respondedContacts = new List<NodeContact>();
-            List<PeerEndPoint> receivedPeers = null;
+            List<EndPoint> receivedPeers = null;
             int alpha = KADEMLIA_ALPHA;
             bool finalRound = false;
             bool checkTerminationCondition = false;
 
             if (queryType == DhtRpcType.FIND_PEERS)
-                receivedPeers = new List<PeerEndPoint>();
+                receivedPeers = new List<EndPoint>();
 
             NodeContact previousClosestSeenContact = KBucket.SelectClosestContacts(seenContacts, nodeId, 1)[0];
 
@@ -336,7 +335,7 @@ namespace MeshCore.Network.DHT
                                     {
                                         lock (receivedPeers)
                                         {
-                                            foreach (PeerEndPoint peer in response.Peers)
+                                            foreach (EndPoint peer in response.Peers)
                                             {
                                                 if (!receivedPeers.Contains(peer))
                                                     receivedPeers.Add(peer);
@@ -480,24 +479,24 @@ namespace MeshCore.Network.DHT
             return contacts as NodeContact[];
         }
 
-        private PeerEndPoint[] QueryFindPeers(NodeContact[] initialContacts, BinaryNumber networkId)
+        private EndPoint[] QueryFindPeers(NodeContact[] initialContacts, BinaryNumber networkId)
         {
             object peers = QueryFind(initialContacts, networkId, DhtRpcType.FIND_PEERS);
 
             if (peers == null)
                 return null;
 
-            return peers as PeerEndPoint[];
+            return peers as EndPoint[];
         }
 
-        private PeerEndPoint[] QueryAnnounce(NodeContact[] initialContacts, BinaryNumber networkId, PeerEndPoint serviceEP)
+        private EndPoint[] QueryAnnounce(NodeContact[] initialContacts, BinaryNumber networkId, EndPoint serviceEP)
         {
             NodeContact[] contacts = QueryFindNode(initialContacts, networkId);
 
             if ((contacts == null) || (contacts.Length == 0))
                 return null;
 
-            List<PeerEndPoint> peers = new List<PeerEndPoint>();
+            List<EndPoint> peers = new List<EndPoint>();
 
             lock (peers)
             {
@@ -512,7 +511,7 @@ namespace MeshCore.Network.DHT
                         {
                             lock (peers)
                             {
-                                foreach (PeerEndPoint peer in response.Peers)
+                                foreach (EndPoint peer in response.Peers)
                                 {
                                     if (!peers.Contains(peer))
                                         peers.Add(peer);
@@ -591,7 +590,7 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        public PeerEndPoint[] FindPeers(BinaryNumber networkId)
+        public EndPoint[] FindPeers(BinaryNumber networkId)
         {
             NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId);
 
@@ -601,7 +600,7 @@ namespace MeshCore.Network.DHT
             return QueryFindPeers(initialContacts, networkId);
         }
 
-        public PeerEndPoint[] Announce(BinaryNumber networkId, PeerEndPoint serviceEP)
+        public EndPoint[] Announce(BinaryNumber networkId, EndPoint serviceEP)
         {
             NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId);
 
@@ -646,6 +645,9 @@ namespace MeshCore.Network.DHT
         public BinaryNumber LocalNodeID
         { get { return _currentNode.NodeId; } }
 
+        public EndPoint LocalNodeEP
+        { get { return _currentNode.NodeEP; } }
+
         public int TotalNodes
         { get { return _routingTable.TotalContacts; } }
 
@@ -679,7 +681,7 @@ namespace MeshCore.Network.DHT
 
             #region public
 
-            public void StorePeer(BinaryNumber networkId, PeerEndPoint peerEP)
+            public void StorePeer(BinaryNumber networkId, EndPoint peerEP)
             {
                 List<PeerEndPoint> peerList;
 
@@ -700,18 +702,18 @@ namespace MeshCore.Network.DHT
                 {
                     foreach (PeerEndPoint peer in peerList)
                     {
-                        if (peer.Equals(peerEP))
+                        if (peer.EndPoint.Equals(peerEP))
                         {
                             peer.UpdateDateAdded();
                             return;
                         }
                     }
 
-                    peerList.Add(peerEP);
+                    peerList.Add(new PeerEndPoint(peerEP));
                 }
             }
 
-            public PeerEndPoint[] GetPeers(BinaryNumber networkId)
+            public EndPoint[] GetPeers(BinaryNumber networkId)
             {
                 List<PeerEndPoint> peers;
 
@@ -723,29 +725,37 @@ namespace MeshCore.Network.DHT
                     }
                     else
                     {
-                        return new PeerEndPoint[] { };
+                        return new EndPoint[] { };
                     }
                 }
+
+                List<PeerEndPoint> finalPeers;
 
                 lock (peers)
                 {
                     if (peers.Count > MAX_PEERS_TO_RETURN)
                     {
-                        List<PeerEndPoint> finalPeers = new List<PeerEndPoint>(peers);
+                        finalPeers = new List<PeerEndPoint>(peers);
                         Random rnd = new Random(DateTime.UtcNow.Millisecond);
 
                         while (finalPeers.Count > MAX_PEERS_TO_RETURN)
                         {
                             finalPeers.RemoveAt(rnd.Next(finalPeers.Count - 1));
                         }
-
-                        return finalPeers.ToArray();
                     }
                     else
                     {
-                        return _data[networkId].ToArray();
+                        finalPeers = _data[networkId];
                     }
                 }
+
+                EndPoint[] finalEPs = new EndPoint[finalPeers.Count];
+                int i = 0;
+
+                foreach (PeerEndPoint peer in finalPeers)
+                    finalEPs[i++] = peer.EndPoint;
+
+                return finalEPs;
             }
 
             public void RemoveExpiredPeers()
@@ -773,6 +783,57 @@ namespace MeshCore.Network.DHT
             }
 
             #endregion
+
+            class PeerEndPoint
+            {
+                #region variables
+
+                const int PEER_EXPIRY_TIME_SECONDS = 900; //15 min expiry
+
+                EndPoint _endPoint;
+
+                DateTime _dateAdded = DateTime.UtcNow;
+
+                #endregion
+
+                #region constructor
+
+                public PeerEndPoint(EndPoint endPoint)
+                {
+                    _endPoint = endPoint;
+
+                    if (_endPoint.AddressFamily == AddressFamily.InterNetworkV6)
+                        (_endPoint as IPEndPoint).Address.ScopeId = 0;
+                }
+
+                #endregion
+
+                #region public
+
+                public bool HasExpired()
+                {
+                    return (DateTime.UtcNow - _dateAdded).TotalSeconds > PEER_EXPIRY_TIME_SECONDS;
+                }
+
+                public void UpdateDateAdded()
+                {
+                    _dateAdded = DateTime.UtcNow;
+                }
+
+                public override string ToString()
+                {
+                    return _endPoint.ToString();
+                }
+
+                #endregion
+
+                #region properties
+
+                public EndPoint EndPoint
+                { get { return _endPoint; } }
+
+                #endregion
+            }
         }
     }
 }

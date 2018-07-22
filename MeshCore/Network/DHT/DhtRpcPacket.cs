@@ -43,7 +43,7 @@ namespace MeshCore.Network.DHT
 
         readonly BinaryNumber _networkId;
         readonly NodeContact[] _contacts;
-        readonly PeerEndPoint[] _peers;
+        readonly EndPoint[] _peers;
 
         #endregion
 
@@ -80,19 +80,19 @@ namespace MeshCore.Network.DHT
                             for (int i = 0; i < _contacts.Length; i++)
                                 _contacts[i] = new NodeContact(bR);
 
-                            _peers = new PeerEndPoint[bR.ReadByte()];
+                            _peers = new EndPoint[bR.ReadByte()];
                             for (int i = 0; i < _peers.Length; i++)
-                                _peers[i] = new PeerEndPoint(bR);
+                                _peers[i] = EndPointExtension.Parse(bR);
 
                             break;
 
                         case DhtRpcType.ANNOUNCE_PEER:
                             _networkId = new BinaryNumber(bR.BaseStream);
 
-                            _peers = new PeerEndPoint[bR.ReadByte()];
+                            _peers = new EndPoint[bR.ReadByte()];
 
                             for (int i = 0; i < _peers.Length; i++)
-                                _peers[i] = new PeerEndPoint(bR);
+                                _peers[i] = EndPointExtension.Parse(bR);
 
                             break;
 
@@ -107,7 +107,7 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        private DhtRpcPacket(EndPoint sourceNodeEP, DhtRpcType type, BinaryNumber networkId, NodeContact[] contacts, PeerEndPoint[] peers)
+        private DhtRpcPacket(EndPoint sourceNodeEP, DhtRpcType type, BinaryNumber networkId, NodeContact[] contacts, EndPoint[] peers)
         {
             _sourceNodeEP = sourceNodeEP;
             _type = type;
@@ -141,17 +141,17 @@ namespace MeshCore.Network.DHT
             return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.FIND_PEERS, networkId, null, null);
         }
 
-        public static DhtRpcPacket CreateFindPeersPacketResponse(NodeContact sourceNode, BinaryNumber networkId, NodeContact[] contacts, PeerEndPoint[] peers)
+        public static DhtRpcPacket CreateFindPeersPacketResponse(NodeContact sourceNode, BinaryNumber networkId, NodeContact[] contacts, EndPoint[] peers)
         {
             return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.FIND_PEERS, networkId, contacts, peers);
         }
 
-        public static DhtRpcPacket CreateAnnouncePeerPacketQuery(NodeContact sourceNode, BinaryNumber networkId, PeerEndPoint peer)
+        public static DhtRpcPacket CreateAnnouncePeerPacketQuery(NodeContact sourceNode, BinaryNumber networkId, EndPoint peer)
         {
-            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.ANNOUNCE_PEER, networkId, null, new PeerEndPoint[] { peer });
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.ANNOUNCE_PEER, networkId, null, new EndPoint[] { peer });
         }
 
-        public static DhtRpcPacket CreateAnnouncePeerPacketResponse(NodeContact sourceNode, BinaryNumber networkId, PeerEndPoint[] peers)
+        public static DhtRpcPacket CreateAnnouncePeerPacketResponse(NodeContact sourceNode, BinaryNumber networkId, EndPoint[] peers)
         {
             return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.ANNOUNCE_PEER, networkId, null, peers);
         }
@@ -205,7 +205,7 @@ namespace MeshCore.Network.DHT
                     else
                     {
                         bW.Write(Convert.ToByte(_peers.Length));
-                        foreach (PeerEndPoint peer in _peers)
+                        foreach (EndPoint peer in _peers)
                             peer.WriteTo(bW);
                     }
                     break;
@@ -220,7 +220,7 @@ namespace MeshCore.Network.DHT
                     else
                     {
                         bW.Write(Convert.ToByte(_peers.Length));
-                        foreach (PeerEndPoint peer in _peers)
+                        foreach (EndPoint peer in _peers)
                             peer.WriteTo(bW);
                     }
                     break;
@@ -254,7 +254,7 @@ namespace MeshCore.Network.DHT
         public NodeContact[] Contacts
         { get { return _contacts; } }
 
-        public PeerEndPoint[] Peers
+        public EndPoint[] Peers
         { get { return _peers; } }
 
         #endregion
