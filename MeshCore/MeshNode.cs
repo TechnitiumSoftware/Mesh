@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using MeshCore.Network;
 using MeshCore.Network.Connections;
-using MeshCore.Network.DHT;
 using MeshCore.Network.SecureChannel;
 using System;
 using System.Collections.Generic;
@@ -204,7 +203,6 @@ namespace MeshCore
         public void Dispose()
         {
             Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         bool _disposed = false;
@@ -264,7 +262,7 @@ namespace MeshCore
                     _maskedUserId = maskedUserId;
                 }
 
-                _connectionManager.DhtManager.BeginAnnounce(maskedUserId, _allowOnlyLocalInboundInvitations, new PeerEndPoint(new IPEndPoint(IPAddress.Any, _connectionManager.LocalPort)), null);
+                _connectionManager.DhtManager.BeginAnnounce(maskedUserId, _allowOnlyLocalInboundInvitations, new IPEndPoint(IPAddress.Any, _connectionManager.LocalPort), null);
                 _connectionManager.TcpRelayClientRegisterHostedNetwork(_maskedUserId);
             }, null, Timeout.Infinite, Timeout.Infinite);
 
