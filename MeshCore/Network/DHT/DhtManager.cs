@@ -61,6 +61,8 @@ namespace MeshCore.Network.DHT
 
         const string IPV6_MULTICAST_IP = "FF12::1";
 
+        readonly int _localDhtPort;
+
         readonly Timer _networkWatcher;
         readonly List<NetworkInfo> _networks = new List<NetworkInfo>();
         readonly List<LocalNetworkDhtManager> _localNetworkDhtManagers = new List<LocalNetworkDhtManager>();
@@ -75,6 +77,8 @@ namespace MeshCore.Network.DHT
 
         public DhtManager(int localDhtPort, string torOnionAddress, IDhtConnectionManager connectionManager, IEnumerable<EndPoint> ipv4BootstrapNodes, IEnumerable<EndPoint> ipv6BootstrapNodes, IEnumerable<EndPoint> torBootstrapNodes, NetProxy proxy, bool enableLocalNetworkDht, bool enableTorNetworkDht)
         {
+            _localDhtPort = localDhtPort;
+
             //init internet dht nodes
             _ipv4InternetDhtNode = new DhtNode(connectionManager, new IPEndPoint(IPAddress.Any, localDhtPort), true);
             _ipv6InternetDhtNode = new DhtNode(connectionManager, new IPEndPoint(IPAddress.IPv6Any, localDhtPort), true);
@@ -146,7 +150,6 @@ namespace MeshCore.Network.DHT
         public void Dispose()
         {
             Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         bool _disposed = false;
@@ -254,6 +257,34 @@ namespace MeshCore.Network.DHT
             }
         }
 
+        private ICollection<EndPoint> RemoveSelfEndPoint(EndPoint[] peers, EndPoint selfEndPoint)
+        {
+            switch (selfEndPoint.AddressFamily)
+            {
+                case AddressFamily.InterNetwork:
+                case AddressFamily.InterNetworkV6:
+                    selfEndPoint = new IPEndPoint((selfEndPoint as IPEndPoint).Address, _localDhtPort);
+                    break;
+
+                case AddressFamily.Unspecified:
+                    selfEndPoint = new DomainEndPoint((selfEndPoint as DomainEndPoint).Address, _localDhtPort);
+                    break;
+
+                default:
+                    return peers;
+            }
+
+            List<EndPoint> newList = new List<EndPoint>();
+
+            foreach (EndPoint peer in peers)
+            {
+                if (!selfEndPoint.Equals(peer))
+                    newList.Add(peer);
+            }
+
+            return newList;
+        }
+
         #endregion
 
         #region public
@@ -279,153 +310,80 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        public void BeginFindPeers(BinaryNumber networkId, bool localNetworkOnly, Action<DhtNetworkType, PeerEndPoint[]> callback)
+        public void BeginFindPeers(BinaryNumber networkId, bool localNetworkOnly, Action<DhtNetworkType, ICollection<EndPoint>> callback)
         {
-            if (!localNetworkOnly)
-            {
-                {
-                    Thread t = new Thread(delegate (object state)
-                    {
-                        try
-                        {
-                            PeerEndPoint[] peers = _ipv4InternetDhtNode.FindPeers(networkId);
-                            if ((peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.IPv4Internet, peers);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.Write(this.GetType().Name, ex);
-                        }
-                    });
-
-                    t.IsBackground = true;
-                    t.Start();
-                }
-
-                {
-                    Thread t = new Thread(delegate (object state)
-                    {
-                        try
-                        {
-                            PeerEndPoint[] peers = _ipv6InternetDhtNode.FindPeers(networkId);
-                            if ((peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.IPv6Internet, peers);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.Write(this.GetType().Name, ex);
-                        }
-                    });
-
-                    t.IsBackground = true;
-                    t.Start();
-                }
-
-                if (_torInternetDhtNode != null)
-                {
-                    Thread t = new Thread(delegate (object state)
-                    {
-                        try
-                        {
-                            PeerEndPoint[] peers = _torInternetDhtNode.FindPeers(networkId);
-                            if ((peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.TorNetwork, peers);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.Write(this.GetType().Name, ex);
-                        }
-                    });
-
-                    t.IsBackground = true;
-                    t.Start();
-                }
-            }
-
-            lock (_localNetworkDhtManagers)
-            {
-                foreach (LocalNetworkDhtManager localNetworkDhtManager in _localNetworkDhtManagers)
-                {
-                    Thread t = new Thread(delegate (object state)
-                    {
-                        try
-                        {
-                            PeerEndPoint[] peers = localNetworkDhtManager.DhtNode.FindPeers(networkId);
-                            if ((peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.LocalNetwork, peers);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.Write(this.GetType().Name, ex);
-                        }
-                    });
-
-                    t.IsBackground = true;
-                    t.Start();
-                }
-            }
+            BeginAnnounce(networkId, localNetworkOnly, null, callback);
         }
 
-        public void BeginAnnounce(BinaryNumber networkId, bool localNetworkOnly, PeerEndPoint serviceEP, Action<DhtNetworkType, PeerEndPoint[]> callback)
+        public void BeginAnnounce(BinaryNumber networkId, bool localNetworkOnly, EndPoint serviceEP, Action<DhtNetworkType, ICollection<EndPoint>> callback)
         {
             if (!localNetworkOnly)
             {
                 {
-                    Thread t = new Thread(delegate (object state)
+                    ThreadPool.QueueUserWorkItem(delegate (object state)
                     {
                         try
                         {
-                            PeerEndPoint[] peers = _ipv4InternetDhtNode.Announce(networkId, serviceEP);
+                            EndPoint[] peers;
+
+                            if (serviceEP == null)
+                                peers = _ipv4InternetDhtNode.FindPeers(networkId);
+                            else
+                                peers = _ipv4InternetDhtNode.Announce(networkId, serviceEP);
+
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.IPv4Internet, peers);
+                                callback(DhtNetworkType.IPv4Internet, RemoveSelfEndPoint(peers, _ipv4InternetDhtNode.LocalNodeEP));
                         }
                         catch (Exception ex)
                         {
                             Debug.Write(this.GetType().Name, ex);
                         }
                     });
-
-                    t.IsBackground = true;
-                    t.Start();
                 }
 
                 {
-                    Thread t = new Thread(delegate (object state)
+                    ThreadPool.QueueUserWorkItem(delegate (object state)
                     {
                         try
                         {
-                            PeerEndPoint[] peers = _ipv6InternetDhtNode.Announce(networkId, serviceEP);
+                            EndPoint[] peers;
+
+                            if (serviceEP == null)
+                                peers = _ipv6InternetDhtNode.FindPeers(networkId);
+                            else
+                                peers = _ipv6InternetDhtNode.Announce(networkId, serviceEP);
+
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.IPv6Internet, peers);
+                                callback(DhtNetworkType.IPv6Internet, RemoveSelfEndPoint(peers, _ipv6InternetDhtNode.LocalNodeEP));
                         }
                         catch (Exception ex)
                         {
                             Debug.Write(this.GetType().Name, ex);
                         }
                     });
-
-                    t.IsBackground = true;
-                    t.Start();
                 }
 
                 if (_torInternetDhtNode != null)
                 {
-                    Thread t = new Thread(delegate (object state)
+                    ThreadPool.QueueUserWorkItem(delegate (object state)
                     {
                         try
                         {
-                            PeerEndPoint[] peers = _torInternetDhtNode.FindPeers(networkId);
+                            EndPoint[] peers;
+
+                            if (serviceEP == null)
+                                peers = _torInternetDhtNode.FindPeers(networkId);
+                            else
+                                peers = _torInternetDhtNode.Announce(networkId, serviceEP);
+
                             if ((peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.TorNetwork, peers);
+                                callback(DhtNetworkType.TorNetwork, RemoveSelfEndPoint(peers, _torInternetDhtNode.LocalNodeEP));
                         }
                         catch (Exception ex)
                         {
                             Debug.Write(this.GetType().Name, ex);
                         }
                     });
-
-                    t.IsBackground = true;
-                    t.Start();
                 }
             }
 
@@ -433,22 +391,25 @@ namespace MeshCore.Network.DHT
             {
                 foreach (LocalNetworkDhtManager localNetworkDhtManager in _localNetworkDhtManagers)
                 {
-                    Thread t = new Thread(delegate (object state)
+                    ThreadPool.QueueUserWorkItem(delegate (object state)
                     {
                         try
                         {
-                            PeerEndPoint[] peers = localNetworkDhtManager.DhtNode.Announce(networkId, serviceEP);
+                            EndPoint[] peers;
+
+                            if (serviceEP == null)
+                                peers = localNetworkDhtManager.DhtNode.FindPeers(networkId);
+                            else
+                                peers = localNetworkDhtManager.DhtNode.Announce(networkId, serviceEP);
+
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.LocalNetwork, peers);
+                                callback(DhtNetworkType.LocalNetwork, RemoveSelfEndPoint(peers, localNetworkDhtManager.DhtNode.LocalNodeEP));
                         }
                         catch (Exception ex)
                         {
                             Debug.Write(this.GetType().Name, ex);
                         }
                     });
-
-                    t.IsBackground = true;
-                    t.Start();
                 }
             }
         }
@@ -644,7 +605,6 @@ namespace MeshCore.Network.DHT
             public void Dispose()
             {
                 Dispose(true);
-                GC.SuppressFinalize(this);
             }
 
             bool _disposed = false;
@@ -753,15 +713,13 @@ namespace MeshCore.Network.DHT
                         socket.SendTimeout = SOCKET_SEND_TIMEOUT;
                         socket.ReceiveTimeout = SOCKET_RECV_TIMEOUT;
 
-                        Thread t = new Thread(delegate (object state)
+                        ThreadPool.QueueUserWorkItem(delegate (object state)
                         {
-                            Socket clientSocket = state as Socket;
-
                             try
                             {
-                                using (Stream s = new WriteBufferedStream(new NetworkStream(clientSocket, true), WRITE_BUFFERED_STREAM_SIZE))
+                                using (Stream s = new WriteBufferedStream(new NetworkStream(socket, true), WRITE_BUFFERED_STREAM_SIZE))
                                 {
-                                    IPEndPoint remoteNodeEP = clientSocket.RemoteEndPoint as IPEndPoint;
+                                    IPEndPoint remoteNodeEP = socket.RemoteEndPoint as IPEndPoint;
 
                                     if (NetUtilities.IsIPv4MappedIPv6Address(remoteNodeEP.Address))
                                         remoteNodeEP = new IPEndPoint(NetUtilities.ConvertFromIPv4MappedIPv6Address(remoteNodeEP.Address), remoteNodeEP.Port);
@@ -772,12 +730,10 @@ namespace MeshCore.Network.DHT
                             catch (Exception ex)
                             {
                                 Debug.Write(this.GetType().Name, ex);
-                                clientSocket.Dispose();
+
+                                socket.Dispose();
                             }
                         });
-
-                        t.IsBackground = true;
-                        t.Start(socket);
                     }
                 }
                 catch (Exception ex)
