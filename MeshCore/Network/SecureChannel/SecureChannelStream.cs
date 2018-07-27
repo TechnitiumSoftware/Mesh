@@ -134,30 +134,30 @@ namespace MeshCore.Network.SecureChannel
         int _authHMACSizeBytes;
 
         //renegotiation
-        long _renegotiateAfterBytesSent;
-        int _renegotiateAfterSeconds;
+        readonly long _renegotiateAfterBytesSent;
+        readonly int _renegotiateAfterSeconds;
         long _bytesSent = 0;
         DateTime _connectedOn;
         Timer _renegotiationTimer;
         const int RENEGOTIATION_TIMER_INTERVAL = 30000;
-        bool _isRenegotiating;
+        volatile bool _isRenegotiating;
         readonly object _renegotiationLock = new object();
 
         readonly object _writeLock = new object();
         readonly object _readLock = new object();
 
         //buffering
-        public const int MAX_PACKET_SIZE = 65504; //mod 32 round figure
-        const int BUFFER_SIZE = 65535;
+        public const int MAX_PACKET_SIZE = 65520; //mod 16 round figure
+        const int BUFFER_SIZE = MAX_PACKET_SIZE + 32;
 
         readonly byte[] _writeBufferData = new byte[BUFFER_SIZE];
-        int _writeBufferPosition = 3;
+        volatile int _writeBufferPosition = 3;
         byte[] _writeBufferPadding;
         readonly byte[] _writeEncryptedData = new byte[BUFFER_SIZE];
 
         readonly byte[] _readBufferData = new byte[BUFFER_SIZE];
-        int _readBufferPosition;
-        int _readBufferLength;
+        volatile int _readBufferPosition;
+        volatile int _readBufferCount;
         readonly byte[] _readEncryptedData = new byte[BUFFER_SIZE];
 
         #endregion
@@ -176,7 +176,7 @@ namespace MeshCore.Network.SecureChannel
 
         #region IDisposable
 
-        bool _disposed = false;
+        volatile bool _disposed = false;
 
         protected override void Dispose(bool disposing)
         {
@@ -379,7 +379,7 @@ namespace MeshCore.Network.SecureChannel
 
             lock (_readLock)
             {
-                int bytesAvailableForRead = _readBufferLength - _readBufferPosition;
+                int bytesAvailableForRead = _readBufferCount - _readBufferPosition;
 
                 while (bytesAvailableForRead < 1)
                 {
@@ -420,7 +420,8 @@ namespace MeshCore.Network.SecureChannel
                                 //renegotiation receiver party
                                 lock (_writeLock)
                                 {
-                                    FlushBuffer(HEADER_FLAG_RENEGOTIATE);
+                                    FlushBuffer(HEADER_FLAG_NONE); //flush buffered data
+                                    FlushBuffer(HEADER_FLAG_RENEGOTIATE); //send RENEGOTIATE packet
 
                                     StartRenegotiation();
                                 }
@@ -474,9 +475,8 @@ namespace MeshCore.Network.SecureChannel
                     bytesPadding = _blockSizeBytes - pendingBytes;
 
                 //write header
-                byte[] header = BitConverter.GetBytes(dataLength);
-                _writeBufferData[0] = header[0];
-                _writeBufferData[1] = header[1];
+                _writeBufferData[0] = (byte)(dataLength & 0xff);
+                _writeBufferData[1] = (byte)(dataLength >> 8);
                 _writeBufferData[2] = headerFlag;
 
                 //write padding
@@ -504,12 +504,17 @@ namespace MeshCore.Network.SecureChannel
                 Buffer.BlockCopy(authHMAC, 0, _writeEncryptedData, _writeBufferPosition, authHMAC.Length);
                 _writeBufferPosition += authHMAC.Length;
 
-                //write encrypted data + auth hmac
-                _baseStream.Write(_writeEncryptedData, 0, _writeBufferPosition);
-                _baseStream.Flush();
-
-                //reset buffer
-                _writeBufferPosition = 3;
+                try
+                {
+                    //write encrypted data + auth hmac
+                    _baseStream.Write(_writeEncryptedData, 0, _writeBufferPosition);
+                    _baseStream.Flush();
+                }
+                finally
+                {
+                    //reset buffer
+                    _writeBufferPosition = 3;
+                }
             }
         }
 
@@ -524,7 +529,7 @@ namespace MeshCore.Network.SecureChannel
 
             //read packet header 2 byte length
             int dataLength = BitConverter.ToUInt16(_readBufferData, 0);
-            _readBufferLength = dataLength;
+            _readBufferCount = dataLength;
 
             dataLength -= _blockSizeBytes;
 
@@ -571,7 +576,7 @@ namespace MeshCore.Network.SecureChannel
             _readBufferPosition = 3;
 
             //return bytes available in this packet to read
-            return _readBufferLength - _readBufferPosition;
+            return _readBufferCount - _readBufferPosition;
         }
 
         #endregion
@@ -589,8 +594,8 @@ namespace MeshCore.Network.SecureChannel
                 {
                     _isRenegotiating = true;
 
-                    //send RENEGOTIATE packet
-                    FlushBuffer(HEADER_FLAG_RENEGOTIATE);
+                    FlushBuffer(HEADER_FLAG_NONE); //flush buffered data
+                    FlushBuffer(HEADER_FLAG_RENEGOTIATE); //send RENEGOTIATE packet
 
                     //wait till other party responds with a return RENEGOTIATE packet
                     if (!Monitor.Wait(_renegotiationLock, ReadTimeout))
@@ -693,7 +698,11 @@ namespace MeshCore.Network.SecureChannel
                         try
                         {
                             if (((_renegotiateAfterBytesSent > 0) && (_bytesSent > _renegotiateAfterBytesSent)) || ((_renegotiateAfterSeconds > 0) && (_connectedOn.AddSeconds(_renegotiateAfterSeconds) < DateTime.UtcNow)))
+                            {
+                                Debug.Write(this.GetType().Name, "Renegotiation triggered");
+
                                 RenegotiateNow();
+                            }
                         }
                         catch (Exception ex)
                         {
