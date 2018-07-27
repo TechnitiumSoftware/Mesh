@@ -48,6 +48,7 @@ namespace MeshCore.Message
         int _messageNumber;
 
         //local data
+        int _remoteMessageNumber;
         DateTime _messageDate;
         BinaryNumber _senderUserId;
         MessageRecipient[] _recipients;
@@ -66,11 +67,12 @@ namespace MeshCore.Message
 
         #region constructor
 
-        public MessageItem(string info)
+        internal MessageItem(string info)
         {
             _messageNumber = -1;
 
             _type = MessageType.Info;
+            _remoteMessageNumber = -1;
             _messageDate = DateTime.UtcNow;
             _messageText = info;
         }
@@ -80,6 +82,7 @@ namespace MeshCore.Message
             _messageNumber = -1;
 
             _type = MessageType.Info;
+            _remoteMessageNumber = -1;
             _messageDate = infoDate;
             _messageText = "";
         }
@@ -88,6 +91,7 @@ namespace MeshCore.Message
         {
             _messageNumber = -1;
 
+            _remoteMessageNumber = -1;
             _messageDate = messageDate;
             _senderUserId = senderUserId;
             _recipients = recipients;
@@ -105,6 +109,7 @@ namespace MeshCore.Message
         {
             _messageNumber = -1;
 
+            _remoteMessageNumber = message.MessageNumber;
             _messageDate = message.MessageDate;
             _senderUserId = senderUserId;
 
@@ -136,6 +141,7 @@ namespace MeshCore.Message
             switch (bR.ReadByte()) //version
             {
                 case 1:
+                    _remoteMessageNumber = bR.ReadInt32();
                     _messageDate = bR.ReadDate();
                     _senderUserId = new BinaryNumber(bR.BaseStream);
 
@@ -230,6 +236,7 @@ namespace MeshCore.Message
         {
             bW.Write((byte)1); //version
 
+            bW.Write(_remoteMessageNumber);
             bW.Write(_messageDate);
 
             if (_senderUserId == null)
@@ -315,6 +322,9 @@ namespace MeshCore.Message
 
         public MessageType Type
         { get { return _type; } }
+
+        public int RemoteMessageNumber
+        { get { return _remoteMessageNumber; } }
 
         public DateTime MessageDate
         { get { return _messageDate; } }
