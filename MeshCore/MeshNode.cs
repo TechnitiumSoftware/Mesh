@@ -267,7 +267,7 @@ namespace MeshCore
             }, null, Timeout.Infinite, Timeout.Infinite);
 
             if (_allowInboundInvitations)
-                _userIdAnnounceTimer.Change(1000, USER_ID_ANNOUNCE_INTERVAL);
+                _userIdAnnounceTimer.Change(5000, USER_ID_ANNOUNCE_INTERVAL);
         }
 
         private void InitMeshNode(BinaryReader bR)
@@ -490,7 +490,7 @@ namespace MeshCore
 
             //trigger announce for new userId
             if (_userIdAnnounceTimer != null)
-                _userIdAnnounceTimer.Change(10000, USER_ID_ANNOUNCE_INTERVAL);
+                _userIdAnnounceTimer.Change(1000, USER_ID_ANNOUNCE_INTERVAL);
         }
 
         public void UpdateProfile(string profileDisplayName, MeshProfileStatus profileStatus, string profileStatusMessage)
