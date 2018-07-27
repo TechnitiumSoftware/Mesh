@@ -595,7 +595,7 @@ namespace MeshCore.Network.DHT
                 _tcpListenerThread.Start();
 
                 //announce async
-                _announceTimer = new Timer(AnnounceAsync, null, 1000, Timeout.Infinite);
+                _announceTimer = new Timer(AnnounceAsync, null, 1000, ANNOUNCEMENT_INTERVAL);
             }
 
             #endregion
@@ -673,6 +673,9 @@ namespace MeshCore.Network.DHT
 
                             if (NetUtilities.IsIPv4MappedIPv6Address(remoteNodeIP))
                                 remoteNodeIP = NetUtilities.ConvertFromIPv4MappedIPv6Address(remoteNodeIP);
+
+                            if (remoteNodeIP.AddressFamily == AddressFamily.InterNetworkV6)
+                                remoteNodeIP.ScopeId = 0;
 
                             try
                             {
@@ -778,27 +781,22 @@ namespace MeshCore.Network.DHT
             {
                 try
                 {
-                    byte[] announcement = (new DhtNodeDiscoveryPacket((ushort)_dhtEndPoint.Port)).ToArray();
-
-                    for (int i = 0; i < ANNOUNCEMENT_RETRY_COUNT; i++)
+                    if (_dhtNode.TotalNodes < 2)
                     {
-                        Broadcast(announcement, 0, announcement.Length);
+                        byte[] announcement = (new DhtNodeDiscoveryPacket((ushort)_dhtEndPoint.Port)).ToArray();
 
-                        if (i < ANNOUNCEMENT_RETRY_COUNT - 1)
-                            Thread.Sleep(ANNOUNCEMENT_RETRY_INTERVAL);
+                        for (int i = 0; i < ANNOUNCEMENT_RETRY_COUNT; i++)
+                        {
+                            Broadcast(announcement, 0, announcement.Length);
+
+                            if (i < ANNOUNCEMENT_RETRY_COUNT - 1)
+                                Thread.Sleep(ANNOUNCEMENT_RETRY_INTERVAL);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.Write(this.GetType().Name, ex);
-                }
-                finally
-                {
-                    if (!_disposed)
-                    {
-                        if (_dhtNode.TotalNodes < 2)
-                            _announceTimer.Change(ANNOUNCEMENT_INTERVAL, Timeout.Infinite);
-                    }
                 }
             }
 
