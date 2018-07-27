@@ -434,6 +434,11 @@ namespace MeshCore.Network.Connections
 
                             AcceptConnectionInitiateProtocol(s, remotePeerEP);
                         }
+                        catch (IOException)
+                        {
+                            //ignore
+                            socket.Dispose();
+                        }
                         catch (Exception ex)
                         {
                             Debug.Write(this.GetType().Name, ex);
@@ -630,19 +635,26 @@ namespace MeshCore.Network.Connections
 
                 //read response
                 int response = s.ReadByte();
+                if (response < 0)
+                    throw new EndOfStreamException();
+
+                BinaryNumber remotePeerId = new BinaryNumber(s);
+
                 switch (response)
                 {
-                    case -1:
-                        throw new EndOfStreamException();
-
                     case 0:
-                        BinaryNumber remotePeerId = new BinaryNumber(s);
-
                         Connection connection = AddConnection(s, remotePeerId, remotePeerEP);
                         if (connection == null)
                         {
                             //check for existing connection again!
                             Connection existingConnection = GetExistingConnection(remotePeerEP);
+                            if (existingConnection != null)
+                            {
+                                s.Dispose();
+                                return existingConnection;
+                            }
+
+                            existingConnection = GetExistingConnection(remotePeerId);
                             if (existingConnection != null)
                             {
                                 s.Dispose();
@@ -656,11 +668,11 @@ namespace MeshCore.Network.Connections
                         s.WriteTimeout = WRITE_TIMEOUT;
                         s.ReadTimeout = READ_TIMEOUT;
 
-                        Debug.Write(this.GetType().Name, "MakeConnectionInitiateProtocol: connection made to " + remotePeerEP.ToString());
+                        Debug.Write(this.GetType().Name, "MakeConnectionInitiateProtocol: connection made to " + remotePeerId.ToString() + " [" + remotePeerEP.ToString() + "]");
 
                         return connection;
 
-                    default:
+                    case 1:
                         Thread.Sleep(500); //wait so that other thread gets time to add his connection in list so that this thread can pick same connection to proceed
 
                         //check for existing connection again!
@@ -671,9 +683,19 @@ namespace MeshCore.Network.Connections
                                 s.Dispose();
                                 return existingConnection;
                             }
+
+                            existingConnection = GetExistingConnection(remotePeerId);
+                            if (existingConnection != null)
+                            {
+                                s.Dispose();
+                                return existingConnection;
+                            }
                         }
 
-                        throw new IOException("Cannot connect to remote peer: request rejected.");
+                        throw new IOException("Cannot connect to remote peer: duplicate connection detected by remote peer.");
+
+                    default:
+                        throw new IOException("Invalid response was received.");
                 }
             }
             catch
@@ -700,8 +722,11 @@ namespace MeshCore.Network.Connections
             //prevent multiple connection requests to same remote end-point
             lock (_makeConnectionList)
             {
-                if (_makeConnectionList.ContainsKey(remotePeerEP))
-                    throw new MeshException("Connection attempt for end-point already in progress.");
+                while (_makeConnectionList.ContainsKey(remotePeerEP))
+                {
+                    if (!Monitor.Wait(_makeConnectionList, SOCKET_CONNECTION_TIMEOUT))
+                        throw new MeshException("Connection attempt for end-point already in progress.");
+                }
 
                 _makeConnectionList.Add(remotePeerEP, null);
             }
@@ -754,6 +779,7 @@ namespace MeshCore.Network.Connections
                 lock (_makeConnectionList)
                 {
                     _makeConnectionList.Remove(remotePeerEP);
+                    Monitor.PulseAll(_makeConnectionList); //signal all waiting connection attempt threads
                 }
             }
         }
@@ -771,8 +797,11 @@ namespace MeshCore.Network.Connections
             //prevent multiple virtual connection requests to same remote end-point
             lock (_makeVirtualConnectionList)
             {
-                if (_makeVirtualConnectionList.ContainsKey(remotePeerEP))
-                    throw new MeshException("Connection attempt for end-point already in progress.");
+                while (_makeVirtualConnectionList.ContainsKey(remotePeerEP))
+                {
+                    if (!Monitor.Wait(_makeVirtualConnectionList, SOCKET_CONNECTION_TIMEOUT))
+                        throw new MeshException("Connection attempt for end-point already in progress.");
+                }
 
                 _makeVirtualConnectionList.Add(remotePeerEP, null);
             }
@@ -811,6 +840,7 @@ namespace MeshCore.Network.Connections
                 lock (_makeVirtualConnectionList)
                 {
                     _makeVirtualConnectionList.Remove(remotePeerEP);
+                    Monitor.PulseAll(_makeVirtualConnectionList); //signal all waiting connection attempt threads
                 }
             }
         }
@@ -855,12 +885,13 @@ namespace MeshCore.Network.Connections
                         s.WriteTimeout = WRITE_TIMEOUT;
                         s.ReadTimeout = READ_TIMEOUT;
 
-                        Debug.Write(this.GetType().Name, "AcceptConnectionInitiateProtocol: connection accepted from " + remotePeerEP.ToString());
+                        Debug.Write(this.GetType().Name, "AcceptConnectionInitiateProtocol: connection accepted from " + remotePeerId.ToString() + " [" + remotePeerEP.ToString() + "]");
                     }
                     else
                     {
                         //send cancel
                         s.WriteByte(1); //signal cancel
+                        _localPeerId.WriteTo(s); //peer id
                         s.Flush();
 
                         throw new IOException("Cannot accept remote connection: duplicate connection detected.");
@@ -890,6 +921,17 @@ namespace MeshCore.Network.Connections
 
                 return null;
             }
+        }
+
+        public Connection GetExistingConnection(BinaryNumber remotePeerId)
+        {
+            lock (_connectionListByEndPoint)
+            {
+                if (_connectionListByPeerId.ContainsKey(remotePeerId))
+                    return _connectionListByPeerId[remotePeerId];
+            }
+
+            return null;
         }
 
         public void ConnectionDisposed(Connection connection)
