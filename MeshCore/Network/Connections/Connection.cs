@@ -152,7 +152,7 @@ namespace MeshCore.Network.Connections
         {
             int frameCount = CONNECTION_FRAME_BUFFER_SIZE;
 
-            do
+            while (true)
             {
                 if (count < frameCount)
                     frameCount = count;
@@ -166,14 +166,16 @@ namespace MeshCore.Network.Connections
                     if (frameCount > 0)
                         _baseStream.Write(buffer, offset, frameCount); //write data
 
-                    //flush base stream
-                    _baseStream.Flush();
-                }
+                    offset += frameCount;
+                    count -= frameCount;
 
-                offset += frameCount;
-                count -= frameCount;
+                    if (count < 1)
+                    {
+                        _baseStream.Flush(); //flush base stream
+                        break;
+                    }
+                }
             }
-            while (count > 0);
         }
 
         private void ReadFrameAsync()
@@ -183,8 +185,8 @@ namespace MeshCore.Network.Connections
                 //frame parameters
                 int signal;
                 BinaryNumber channelId = new BinaryNumber(new byte[32]);
-                ushort dataLength;
                 byte[] dataLengthBuffer = new byte[2];
+                OffsetStream dataStream = new OffsetStream(_baseStream, 0, 0, true, false);
 
                 while (true)
                 {
@@ -200,7 +202,7 @@ namespace MeshCore.Network.Connections
 
                     //read data length
                     _baseStream.ReadBytes(dataLengthBuffer, 0, 2);
-                    dataLength = BitConverter.ToUInt16(dataLengthBuffer, 0);
+                    dataStream.Reset(0, BitConverter.ToUInt16(dataLengthBuffer, 0), 0);
 
                     #endregion
 
@@ -246,7 +248,7 @@ namespace MeshCore.Network.Connections
                             }
 
                             //check if tcp relay is hosted for the channel. reply back tcp relay peers list if available
-                            Connection[] connections = _connectionManager.GetTcpRelayServerHostedNetworkConnections(channelId);
+                            Connection[] connections = _connectionManager.GetTcpRelayServerHostedNetworkConnections(channelId.Clone());
 
                             if (connections.Length > 0)
                             {
@@ -270,31 +272,21 @@ namespace MeshCore.Network.Connections
 
                         case ConnectionSignal.ChannelData:
                             #region ChannelData
+
+                            try
                             {
                                 ChannelStream channel = null;
 
-                                try
+                                lock (_channels)
                                 {
-                                    lock (_channels)
-                                    {
-                                        channel = _channels[channelId];
-                                    }
-                                }
-                                catch
-                                {
-                                    _baseStream.CopyTo(Stream.Null, 1024, dataLength); //remove channel data from base stream
+                                    channel = _channels[channelId];
                                 }
 
-                                if (channel != null)
-                                {
-                                    try
-                                    {
-                                        channel.FeedReadBuffer(_baseStream, dataLength, _channelWriteTimeout);
-                                    }
-                                    catch
-                                    { }
-                                }
+                                channel.FeedReadBuffer(dataStream, _channelWriteTimeout);
                             }
+                            catch
+                            { }
+
                             #endregion
                             break;
 
@@ -449,7 +441,7 @@ namespace MeshCore.Network.Connections
                         case ConnectionSignal.TcpRelayUnregisterHostedNetwork:
                             #region TcpRelayUnregisterHostedNetwork
 
-                            _connectionManager.TcpRelayServerUnregisterHostedNetwork(this, channelId);
+                            _connectionManager.TcpRelayServerUnregisterHostedNetwork(this, channelId.Clone());
 
                             #endregion
                             break;
@@ -457,7 +449,7 @@ namespace MeshCore.Network.Connections
                         case ConnectionSignal.TcpRelayReceivedNetworkPeers:
                             #region TcpRelayNetworkPeers
                             {
-                                BinaryReader bR = new BinaryReader(new OffsetStream(_baseStream, 0, dataLength, true, false));
+                                BinaryReader bR = new BinaryReader(dataStream);
 
                                 int count = bR.ReadByte();
                                 List<EndPoint> peerEPs = new List<EndPoint>(count);
@@ -465,7 +457,7 @@ namespace MeshCore.Network.Connections
                                 for (int i = 0; i < count; i++)
                                     peerEPs.Add(EndPointExtension.Parse(bR));
 
-                                _connectionManager.Node.ReceivedMeshNetworkPeersViaTcpRelay(this, channelId, peerEPs);
+                                _connectionManager.Node.ReceivedMeshNetworkPeersViaTcpRelay(this, channelId.Clone(), peerEPs);
                             }
                             #endregion
                             break;
@@ -473,6 +465,10 @@ namespace MeshCore.Network.Connections
                         default:
                             throw new IOException("Invalid frame signal.");
                     }
+
+                    //discard any unread data
+                    if (dataStream.Length > dataStream.Position)
+                        dataStream.CopyTo(Stream.Null, 1024, Convert.ToInt32(dataStream.Length - dataStream.Position));
                 }
             }
             catch (Exception ex)
@@ -513,7 +509,7 @@ namespace MeshCore.Network.Connections
             lock (_channels)
             {
                 if (_channels.ContainsKey(channelId))
-                    throw new ArgumentException("Channel already exists.");
+                    throw new InvalidOperationException("Channel already exists.");
 
                 channel = new ChannelStream(this, channelId);
                 _channels.Add(channelId, channel);
@@ -545,7 +541,7 @@ namespace MeshCore.Network.Connections
             lock (_channels)
             {
                 if (_channels.ContainsKey(channelId))
-                    throw new ArgumentException("Channel already exists.");
+                    throw new InvalidOperationException("Channel already exists.");
 
                 channel = new ChannelStream(this, channelId);
                 _channels.Add(channel.ChannelId, channel);
@@ -565,7 +561,7 @@ namespace MeshCore.Network.Connections
             lock (_channels)
             {
                 if (_channels.ContainsKey(channelId))
-                    throw new ArgumentException("Channel already exists.");
+                    throw new InvalidOperationException("Channel already exists.");
 
                 channel = new ChannelStream(this, channelId);
                 _channels.Add(channelId, channel);
@@ -655,13 +651,13 @@ namespace MeshCore.Network.Connections
             readonly BinaryNumber _channelId;
 
             readonly byte[] _readBuffer = new byte[CONNECTION_FRAME_BUFFER_SIZE];
-            int _readBufferOffset;
-            int _readBufferCount;
+            volatile int _readBufferPosition;
+            volatile int _readBufferCount;
 
             int _readTimeout = CHANNEL_READ_TIMEOUT;
             int _writeTimeout = CHANNEL_WRITE_TIMEOUT;
 
-            bool _disconnected = false;
+            volatile bool _disconnected = false;
 
             #endregion
 
@@ -677,7 +673,7 @@ namespace MeshCore.Network.Connections
 
             #region IDisposable
 
-            bool _disposed = false;
+            volatile bool _disposed = false;
 
             protected override void Dispose(bool disposing)
             {
@@ -804,9 +800,9 @@ namespace MeshCore.Network.Connections
                     if (bytesToCopy > _readBufferCount)
                         bytesToCopy = _readBufferCount;
 
-                    Buffer.BlockCopy(_readBuffer, _readBufferOffset, buffer, offset, bytesToCopy);
+                    Buffer.BlockCopy(_readBuffer, _readBufferPosition, buffer, offset, bytesToCopy);
 
-                    _readBufferOffset += bytesToCopy;
+                    _readBufferPosition += bytesToCopy;
                     _readBufferCount -= bytesToCopy;
 
                     if (_readBufferCount < 1)
@@ -828,8 +824,9 @@ namespace MeshCore.Network.Connections
 
             #region private
 
-            internal void FeedReadBuffer(Stream s, int count, int timeout)
+            internal void FeedReadBuffer(Stream s, int timeout)
             {
+                int count = Convert.ToInt32(s.Length - s.Position);
                 int readCount = _readBuffer.Length;
 
                 while (count > 0)
@@ -837,31 +834,22 @@ namespace MeshCore.Network.Connections
                     lock (this)
                     {
                         if (_disposed)
-                        {
-                            s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                             throw new ObjectDisposedException("ChannelStream");
-                        }
 
                         if (_readBufferCount > 0)
                         {
                             if (!Monitor.Wait(this, timeout))
-                            {
-                                s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                                 throw new IOException("Channel FeedReadBuffer timed out.");
-                            }
 
                             if (_readBufferCount > 0)
-                            {
-                                s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                                 throw new IOException("Channel FeedReadBuffer failed. Buffer not empty.");
-                            }
                         }
 
                         if (count < readCount)
                             readCount = count;
 
                         s.ReadBytes(_readBuffer, 0, readCount);
-                        _readBufferOffset = 0;
+                        _readBufferPosition = 0;
                         _readBufferCount = readCount;
                         count -= readCount;
 
