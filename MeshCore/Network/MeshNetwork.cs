@@ -70,7 +70,7 @@ namespace MeshCore.Network
 
         #region variables
 
-        public const int MAX_MESSAGE_SIZE = SecureChannelStream.MAX_PACKET_SIZE - 32;
+        const int MAX_MESSAGE_SIZE = 4 * 1024;
         const int DATA_STREAM_BUFFER_SIZE = 8 * 1024;
 
         const int RENEGOTIATE_AFTER_BYTES_SENT = 104857600; //100mb
@@ -144,6 +144,7 @@ namespace MeshCore.Network
             _userId = userId;
             _sharedSecret = "";
             _status = status;
+            _localNetworkOnlyDateModified = DateTime.UtcNow;
             _localNetworkOnly = localNetworkOnly;
 
             //generate id
@@ -171,6 +172,7 @@ namespace MeshCore.Network
             _networkName = networkName;
             _sharedSecret = sharedSecret;
             _status = MeshNetworkStatus.Online;
+            _localNetworkOnlyDateModified = DateTime.UtcNow;
             _localNetworkOnly = localNetworkOnly;
 
             //generate ids
@@ -628,31 +630,38 @@ namespace MeshCore.Network
 
             ThreadPool.QueueUserWorkItem(delegate (object state)
             {
+                Connection connection;
+
                 try
                 {
-                    //make connection
-                    Connection connection = _connectionManager.MakeConnection(peerEP);
-
-                    EstablishSecureChannelAndJoinNetwork(connection);
+                    connection = _connectionManager.MakeConnection(peerEP);
                 }
                 catch (Exception ex)
                 {
                     Debug.Write(this.GetType().Name, ex);
 
-                    if ((fallbackViaConnection != null) && !fallbackViaConnection.IsVirtualConnection)
-                    {
-                        try
-                        {
-                            //make virtual connection
-                            Connection virtualConnection = _connectionManager.MakeVirtualConnection(fallbackViaConnection, peerEP);
+                    if ((fallbackViaConnection == null) || fallbackViaConnection.IsVirtualConnection)
+                        return;
 
-                            EstablishSecureChannelAndJoinNetwork(virtualConnection);
-                        }
-                        catch (Exception ex2)
-                        {
-                            Debug.Write(this.GetType().Name, ex2);
-                        }
+                    try
+                    {
+                        connection = _connectionManager.MakeVirtualConnection(fallbackViaConnection, peerEP); //make virtual connection
                     }
+                    catch (Exception ex2)
+                    {
+                        Debug.Write(this.GetType().Name, ex2);
+
+                        return;
+                    }
+                }
+
+                try
+                {
+                    EstablishSecureChannelAndJoinNetwork(connection);
+                }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
                 }
             });
         }
@@ -696,7 +705,7 @@ namespace MeshCore.Network
                         break;
 
                     default:
-                        throw new InvalidOperationException("Invalid network type.");
+                        throw new NotSupportedException();
                 }
 
                 //establish secure channel
@@ -1118,7 +1127,7 @@ namespace MeshCore.Network
                 _pingTimer.Change(PING_TIMER_INTERVAL, PING_TIMER_INTERVAL);
 
                 //start dht announce
-                _dhtAnnounceTimer.Change(1000, DHT_ANNOUNCE_TIMER_INTERVAL);
+                _dhtAnnounceTimer.Change(5000, DHT_ANNOUNCE_TIMER_INTERVAL);
                 _dhtAnnounceTimerIsRunning = true;
 
                 _status = MeshNetworkStatus.Online;
@@ -1215,6 +1224,9 @@ namespace MeshCore.Network
 
         public void SendTextMessage(string message)
         {
+            if (message.Length > MAX_MESSAGE_SIZE)
+                throw new IOException("MeshNetwork message data size cannot exceed " + MAX_MESSAGE_SIZE + " bytes.");
+
             MessageRecipient[] msgRcpt = GetMessageRecipients();
 
             MessageItem msg = new MessageItem(DateTime.UtcNow, _userId, msgRcpt, MessageType.TextMessage, message, null, null, 0, null);
@@ -1230,6 +1242,9 @@ namespace MeshCore.Network
 
         public void SendInlineImage(string message, string filePath, byte[] imageThumbnail)
         {
+            if (message.Length > MAX_MESSAGE_SIZE)
+                throw new IOException("MeshNetwork message data size cannot exceed " + MAX_MESSAGE_SIZE + " bytes.");
+
             MessageRecipient[] msgRcpt = GetMessageRecipients();
 
             MessageItem msg = new MessageItem(DateTime.UtcNow, _userId, msgRcpt, MessageType.InlineImage, message, imageThumbnail, Path.GetFileName(filePath), (new FileInfo(filePath)).Length, filePath);
@@ -1245,6 +1260,9 @@ namespace MeshCore.Network
 
         public void SendFileAttachment(string message, string filePath)
         {
+            if (message.Length > MAX_MESSAGE_SIZE)
+                throw new IOException("MeshNetwork message data size cannot exceed " + MAX_MESSAGE_SIZE + " bytes.");
+
             MessageRecipient[] msgRcpt = GetMessageRecipients();
 
             MessageItem msg = new MessageItem(DateTime.UtcNow, _userId, msgRcpt, MessageType.FileAttachment, message, null, Path.GetFileName(filePath), (new FileInfo(filePath)).Length, filePath);
@@ -1747,9 +1765,6 @@ namespace MeshCore.Network
 
             internal void SendMessage(byte[] data, int offset, int count)
             {
-                if (count > MAX_MESSAGE_SIZE)
-                    throw new IOException("MeshNetwork message data size cannot exceed " + MAX_MESSAGE_SIZE + " bytes.");
-
                 _sessionsLock.EnterReadLock();
                 try
                 {
@@ -2015,49 +2030,21 @@ namespace MeshCore.Network
 
             #region public
 
-            public void ReceiveFileAttachment(int messageNumber, string fileName)
+            public FileTransfer ReceiveFileAttachment(int messageNumber, string fileName)
             {
-                Thread t = new Thread(delegate (object state)
+                Session[] sessions;
+
+                _sessionsLock.EnterReadLock();
+                try
                 {
-                    try
-                    {
-                        Session[] sessions;
+                    sessions = _sessions.ToArray();
+                }
+                finally
+                {
+                    _sessionsLock.ExitReadLock();
+                }
 
-                        _sessionsLock.EnterReadLock();
-                        try
-                        {
-                            sessions = _sessions.ToArray();
-                        }
-                        finally
-                        {
-                            _sessionsLock.ExitReadLock();
-                        }
-
-                        using (FileStream fS = new FileStream(Path.Combine(_network.Node.DownloadFolder, fileName), FileMode.Create, FileAccess.Write))
-                        {
-                            long fileOffset = fS.Length;
-                            fS.Position = fileOffset;
-
-                            foreach (Session session in sessions)
-                            {
-                                if (session.ReceiveFileTo(messageNumber, fileOffset, fS))
-                                {
-                                    //file transfer success
-                                    return;
-                                }
-                            }
-
-                            //file transfer failed
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.Write(this.GetType().Name, ex);
-                    }
-                });
-
-                t.IsBackground = true;
-                t.Start();
+                return new FileTransfer(messageNumber, Path.Combine(_network.Node.DownloadFolder, fileName), sessions);
             }
 
             public override string ToString()
@@ -2196,7 +2183,168 @@ namespace MeshCore.Network
 
             #endregion
 
-            private class Session : IDisposable
+            public enum FileTransferStatus
+            {
+                Unknown = 0,
+                Starting = 1,
+                Downloading = 2,
+                Complete = 3,
+                Canceled = 4,
+                Failed = 5,
+                Error = 6
+            }
+
+            public class FileTransfer
+            {
+                #region variables
+
+                Thread _thread;
+
+                string _filePath;
+                FileTransferStatus _status;
+                long _bytesReceived;
+                long _fileSize;
+                DateTime _startedOn;
+
+                #endregion
+
+                #region constructor
+
+                internal FileTransfer(int messageNumber, string filePath, Session[] sessions)
+                {
+                    _filePath = filePath;
+
+                    _thread = new Thread(delegate (object state)
+                    {
+                        Stream dS = null;
+
+                        try
+                        {
+                            using (FileStream fS = new FileStream(filePath, FileMode.OpenOrCreate, FileAccess.Write))
+                            {
+                                _bytesReceived = fS.Length;
+                                fS.Position = _bytesReceived;
+
+                                _status = FileTransferStatus.Starting;
+
+                                //find session for file transfer
+                                foreach (Session session in sessions)
+                                {
+                                    dS = session.ReceiveFile(messageNumber, _bytesReceived);
+                                    if (dS != null)
+                                        break;
+                                }
+
+                                if (dS == null)
+                                {
+                                    //file transfer declined by remote peer
+                                    _status = FileTransferStatus.Failed;
+                                    return;
+                                }
+
+                                //start file transfer
+                                _status = FileTransferStatus.Downloading;
+                                _startedOn = DateTime.UtcNow;
+                                byte[] buffer = new byte[32 * 1024];
+                                int bytesRead;
+
+                                //read file size
+                                dS.ReadBytes(buffer, 0, 8);
+                                _fileSize = BitConverter.ToInt64(buffer, 0);
+
+                                //read file data
+                                while (true)
+                                {
+                                    bytesRead = dS.Read(buffer, 0, buffer.Length);
+                                    if (bytesRead < 1)
+                                        break;
+
+                                    fS.Write(buffer, 0, bytesRead);
+
+                                    _bytesReceived += bytesRead;
+                                }
+
+                                if (_bytesReceived >= _fileSize)
+                                    _status = FileTransferStatus.Complete;
+                                else
+                                    _status = FileTransferStatus.Failed;
+                            }
+                        }
+                        catch (ThreadAbortException)
+                        {
+                            _status = FileTransferStatus.Canceled;
+                        }
+                        catch (Exception ex)
+                        {
+                            _status = FileTransferStatus.Error;
+                            Debug.Write(this.GetType().Name, ex);
+                        }
+                        finally
+                        {
+                            if (dS != null)
+                                dS.Dispose();
+                        }
+                    });
+
+                    _thread.IsBackground = true;
+                    _thread.Start();
+                }
+
+                #endregion
+
+                #region public
+
+                public void Cancel()
+                {
+                    _thread.Abort();
+                }
+
+                #endregion
+
+                #region properties
+
+                public string FilePath
+                { get { return _filePath; } }
+
+                public FileTransferStatus Status
+                { get { return _status; } }
+
+                public long BytesReceived
+                { get { return _bytesReceived; } }
+
+                public long FileSize
+                { get { return _fileSize; } }
+
+                public DateTime StartedOn
+                { get { return _startedOn; } }
+
+                public int ProgressPercentage
+                {
+                    get
+                    {
+                        if (_fileSize < 1)
+                            return 100;
+
+                        return (int)((_bytesReceived * 100) / _fileSize);
+                    }
+                }
+
+                public double DownloadSpeed
+                {
+                    get
+                    {
+                        long secondsElapsed = (long)(DateTime.UtcNow - _startedOn).TotalSeconds;
+                        if (secondsElapsed < 1)
+                            return 0.0;
+
+                        return _bytesReceived / secondsElapsed;
+                    }
+                }
+
+                #endregion
+            }
+
+            internal class Session : IDisposable
             {
                 #region variables
 
@@ -2283,42 +2431,33 @@ namespace MeshCore.Network
 
                 #region private
 
-                private void WriteDataPacket(byte[] data, int offset, int count)
-                {
-                    Monitor.Enter(_channel);
-                    try
-                    {
-                        _channel.Write(new byte[2], 0, 2); //port 0
-                        _channel.Write(data, offset, count);
-                        _channel.Flush();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.Write(this.GetType().Name, ex);
-                    }
-                    finally
-                    {
-                        Monitor.Exit(_channel);
-                    }
-                }
-
                 private void WriteDataPacket(ushort port, byte[] data, int offset, int count)
                 {
-                    Monitor.Enter(_channel);
-                    try
+                    if ((port == 0) && (count > ushort.MaxValue))
+                        throw new ArgumentOutOfRangeException("Data count cannot exceed " + ushort.MaxValue + " for port 0.");
+
+                    int packetCount = ushort.MaxValue;
+
+                    while (true)
                     {
-                        _channel.Write(BitConverter.GetBytes(port), 0, 2); //port
-                        _channel.Write(BitConverter.GetBytes(Convert.ToUInt16(count)), 0, 2); //data length
-                        _channel.Write(data, offset, count);
-                        _channel.Flush();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.Write(this.GetType().Name, ex);
-                    }
-                    finally
-                    {
-                        Monitor.Exit(_channel);
+                        if (count < packetCount)
+                            packetCount = count;
+
+                        lock (_channel)
+                        {
+                            _channel.Write(BitConverter.GetBytes(port), 0, 2); //write port
+                            _channel.Write(BitConverter.GetBytes(Convert.ToUInt16(packetCount)), 0, 2); //write data length
+                            _channel.Write(data, offset, packetCount);//write data
+
+                            offset += packetCount;
+                            count -= packetCount;
+
+                            if (count < 1)
+                            {
+                                _channel.Flush(); //flush base stream
+                                break;
+                            }
+                        }
                     }
                 }
 
@@ -2328,15 +2467,17 @@ namespace MeshCore.Network
                     {
                         BinaryReader bR = new BinaryReader(_channel);
                         ushort port;
-                        ushort length;
+                        OffsetStream dataStream = new OffsetStream(_channel, 0, 0, true, false);
+                        BinaryReader dataReader = new BinaryReader(dataStream);
 
                         while (true)
                         {
                             port = bR.ReadUInt16();
+                            dataStream.Reset(0, bR.ReadUInt16(), 0);
 
                             if (port == 0)
                             {
-                                MeshNetworkPacket packet = MeshNetworkPacket.Parse(bR);
+                                MeshNetworkPacket packet = MeshNetworkPacket.Parse(dataReader);
 
                                 switch (packet.Type)
                                 {
@@ -2537,8 +2678,13 @@ namespace MeshCore.Network
                                                             //open local file stream
                                                             using (FileStream fS = new FileStream(msg.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                                                             {
+                                                                //write file size
+                                                                dS.Write(BitConverter.GetBytes(fS.Length));
+
                                                                 //set file position to allow pause/resume transfer
                                                                 fS.Position = fileRequest.FileOffset;
+
+                                                                //write file data
                                                                 fS.CopyTo(dS);
                                                             }
                                                         }
@@ -2559,17 +2705,27 @@ namespace MeshCore.Network
                             }
                             else
                             {
-                                length = bR.ReadUInt16();
-
                                 DataStream stream = null;
 
-                                lock (_dataStreams)
+                                try
                                 {
-                                    stream = _dataStreams[port];
-                                }
+                                    lock (_dataStreams)
+                                    {
+                                        stream = _dataStreams[port];
+                                    }
 
-                                stream.FeedReadBuffer(_channel, length, 30000);
+                                    stream.FeedReadBuffer(dataStream, 30000);
+                                }
+                                catch
+                                {
+                                    if (stream != null)
+                                        stream.Dispose();
+                                }
                             }
+
+                            //discard any unread data
+                            if (dataStream.Length > dataStream.Position)
+                                dataStream.CopyTo(Stream.Null, 1024, Convert.ToInt32(dataStream.Length - dataStream.Position));
                         }
                     }
                     catch (SecureChannelException ex)
@@ -2619,7 +2775,7 @@ namespace MeshCore.Network
                         }
                         else if (_dataStreams.ContainsKey(port))
                         {
-                            throw new ArgumentException("Data port already in use.");
+                            throw new InvalidOperationException("Data port already in use.");
                         }
 
                         DataStream stream = new DataStream(this, port);
@@ -2635,7 +2791,7 @@ namespace MeshCore.Network
 
                 public void SendMessage(byte[] data, int offset, int count)
                 {
-                    WriteDataPacket(data, offset, count);
+                    WriteDataPacket(0, data, offset, count);
                 }
 
                 public void SendMessage(MeshNetworkPacket message)
@@ -2645,30 +2801,27 @@ namespace MeshCore.Network
                         message.WriteTo(new BinaryWriter(mS));
 
                         byte[] buffer = mS.ToArray();
-                        WriteDataPacket(buffer, 0, buffer.Length);
+                        WriteDataPacket(0, buffer, 0, buffer.Length);
                     }
                 }
 
-                public bool ReceiveFileTo(int messageNumber, long fileOffset, Stream s)
+                public Stream ReceiveFile(int messageNumber, long fileOffset)
                 {
                     //open data port
-                    using (DataStream dS = OpenDataStream())
+                    DataStream dS = OpenDataStream();
+
+                    //send file request
+                    SendMessage(new MeshNetworkPacketFileRequest(messageNumber, fileOffset, dS.Port));
+
+                    //peek first byte for EOF test
+                    int firstByte = dS.PeekByte();
+                    if (firstByte < 0)
                     {
-                        //send file request
-                        SendMessage(new MeshNetworkPacketFileRequest(messageNumber, fileOffset, dS.Port));
-
-                        //read first byte for EOF test
-                        int firstByte = dS.ReadByte();
-                        if (firstByte < 0)
-                            return false; //remote peer disconnected data stream; request failed
-
-                        s.WriteByte((byte)firstByte); //write first byte
-
-                        //start copying rest of data
-                        dS.CopyTo(s);
-
-                        return true; //success
+                        dS.Dispose();
+                        return null; //remote peer disconnected data stream; request failed
                     }
+
+                    return dS;
                 }
 
                 public void Disconnect()
@@ -2715,8 +2868,8 @@ namespace MeshCore.Network
                     readonly ushort _port;
 
                     readonly byte[] _readBuffer = new byte[DATA_STREAM_BUFFER_SIZE];
-                    int _readBufferOffset;
-                    int _readBufferCount;
+                    volatile int _readBufferPosition;
+                    volatile int _readBufferCount;
 
                     int _readTimeout = DATA_READ_TIMEOUT;
                     int _writeTimeout = DATA_WRITE_TIMEOUT;
@@ -2735,7 +2888,7 @@ namespace MeshCore.Network
 
                     #region IDisposable
 
-                    bool _disposed = false;
+                    volatile bool _disposed = false;
 
                     protected override void Dispose(bool disposing)
                     {
@@ -2838,6 +2991,21 @@ namespace MeshCore.Network
                         throw new NotSupportedException("DataStream stream does not support seeking.");
                     }
 
+                    public int PeekByte()
+                    {
+                        byte[] buffer = new byte[1];
+
+                        int bytesRead = Read(buffer, 0, 1);
+                        if (bytesRead < 1)
+                            return -1;
+
+                        //reset read buffer offset & count
+                        _readBufferPosition -= bytesRead;
+                        _readBufferCount += bytesRead;
+
+                        return buffer[0];
+                    }
+
                     public override int Read(byte[] buffer, int offset, int count)
                     {
                         if (count < 1)
@@ -2862,9 +3030,9 @@ namespace MeshCore.Network
                             if (bytesToCopy > _readBufferCount)
                                 bytesToCopy = _readBufferCount;
 
-                            Buffer.BlockCopy(_readBuffer, _readBufferOffset, buffer, offset, bytesToCopy);
+                            Buffer.BlockCopy(_readBuffer, _readBufferPosition, buffer, offset, bytesToCopy);
 
-                            _readBufferOffset += bytesToCopy;
+                            _readBufferPosition += bytesToCopy;
                             _readBufferCount -= bytesToCopy;
 
                             if (_readBufferCount < 1)
@@ -2879,15 +3047,18 @@ namespace MeshCore.Network
                         if (_disposed)
                             throw new ObjectDisposedException("DataStream");
 
-                        _session.WriteDataPacket(_port, buffer, offset, count);
+                        if (count > 0)
+                            _session.WriteDataPacket(_port, buffer, offset, count);
                     }
 
                     #endregion
 
                     #region private
 
-                    public void FeedReadBuffer(Stream s, int count, int timeout)
+                    public void FeedReadBuffer(Stream s, int timeout)
                     {
+                        int count = Convert.ToInt32(s.Length - s.Position);
+
                         if (count < 1)
                         {
                             Dispose();
@@ -2901,31 +3072,22 @@ namespace MeshCore.Network
                             lock (this)
                             {
                                 if (_disposed)
-                                {
-                                    s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                                     throw new ObjectDisposedException("DataStream");
-                                }
 
                                 if (_readBufferCount > 0)
                                 {
                                     if (!Monitor.Wait(this, timeout))
-                                    {
-                                        s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                                         throw new IOException("DataStream FeedReadBuffer timed out.");
-                                    }
 
                                     if (_readBufferCount > 0)
-                                    {
-                                        s.CopyTo(Stream.Null, 1024, count); //remove unread data from the source stream
                                         throw new IOException("DataStream FeedReadBuffer failed. Buffer not empty.");
-                                    }
                                 }
 
                                 if (count < readCount)
                                     readCount = count;
 
                                 s.ReadBytes(_readBuffer, 0, readCount);
-                                _readBufferOffset = 0;
+                                _readBufferPosition = 0;
                                 _readBufferCount = readCount;
                                 count -= readCount;
 
