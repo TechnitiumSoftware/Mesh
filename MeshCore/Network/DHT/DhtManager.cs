@@ -42,8 +42,6 @@ namespace MeshCore.Network.DHT
     {
         #region variables
 
-        const string DHT_BOOTSTRAP_URL = "https://mesh.im/dht-bootstrap.bin";
-
         const int WRITE_BUFFERED_STREAM_SIZE = 128;
 
         const int SOCKET_CONNECTION_TIMEOUT = 2000;
@@ -94,48 +92,7 @@ namespace MeshCore.Network.DHT
                 //add known bootstrap nodes
                 _torInternetDhtNode.AddNode(torBootstrapNodes);
             }
-
-            //add bootstrap nodes via web
-            ThreadPool.QueueUserWorkItem(delegate (object state)
-            {
-                try
-                {
-                    using (WebClientEx wC = new WebClientEx())
-                    {
-                        wC.Proxy = proxy;
-
-                        using (BinaryReader bR = new BinaryReader(new MemoryStream(wC.DownloadData(DHT_BOOTSTRAP_URL))))
-                        {
-                            int count = bR.ReadByte();
-
-                            for (int i = 0; i < count; i++)
-                            {
-                                EndPoint nodeEP = EndPointExtension.Parse(bR);
-
-                                switch (nodeEP.AddressFamily)
-                                {
-                                    case AddressFamily.InterNetwork:
-                                        _ipv4InternetDhtNode.AddNode(nodeEP);
-                                        break;
-
-                                    case AddressFamily.InterNetworkV6:
-                                        _ipv6InternetDhtNode.AddNode(nodeEP);
-                                        break;
-
-                                    case AddressFamily.Unspecified:
-                                        _torInternetDhtNode?.AddNode(nodeEP);
-                                        break;
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.Write(this.GetType().Name, ex);
-                }
-            });
-
+            
             if (enableLocalNetworkDht)
             {
                 //start network watcher
@@ -288,6 +245,24 @@ namespace MeshCore.Network.DHT
         #endregion
 
         #region public
+
+        public void AddNode(EndPoint nodeEP)
+        {
+            switch (nodeEP.AddressFamily)
+            {
+                case AddressFamily.InterNetwork:
+                    _ipv4InternetDhtNode.AddNode(nodeEP);
+                    break;
+
+                case AddressFamily.InterNetworkV6:
+                    _ipv6InternetDhtNode.AddNode(nodeEP);
+                    break;
+
+                case AddressFamily.Unspecified:
+                    _torInternetDhtNode?.AddNode(nodeEP);
+                    break;
+            }
+        }
 
         public void AcceptInternetDhtConnection(Stream s, EndPoint remoteNodeEP)
         {
