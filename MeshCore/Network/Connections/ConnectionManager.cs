@@ -1463,17 +1463,34 @@ namespace MeshCore.Network.Connections
                     client.NetworkType = WebClientExNetworkType.IPv4Only;
                     client.Proxy = _node.Proxy;
                     client.QueryString.Add("port", externalPort.ToString());
+                    client.QueryString.Add("ts", DateTime.UtcNow.ToBinary().ToString());
                     client.Timeout = 10000;
 
                     using (BinaryReader bR = new BinaryReader(client.OpenRead(IPv4_CONNECTIVITY_CHECK_WEB_SERVICE)))
                     {
                         _webCheckError = false;
-                        _webCheckSuccess = (bR.ReadByte() == 1);
 
-                        if (_webCheckSuccess)
-                            _ipv4ConnectivityCheckExternalEP = EndPointExtension.Parse(bR);
-                        else
-                            _ipv4ConnectivityCheckExternalEP = null;
+                        switch (bR.ReadByte()) //version
+                        {
+                            case 1:
+                                _webCheckSuccess = bR.ReadBoolean(); //test status
+                                EndPoint selfEP = EndPointExtension.Parse(bR); //self end-point
+
+                                if (_webCheckSuccess)
+                                    _ipv4ConnectivityCheckExternalEP = selfEP;
+                                else
+                                    _ipv4ConnectivityCheckExternalEP = null;
+
+                                //read peers
+                                int count = bR.ReadByte();
+                                for (int i = 0; i < count; i++)
+                                    _dhtManager.AddNode(EndPointExtension.Parse(bR));
+
+                                break;
+
+                            default:
+                                throw new NotSupportedException("Connectivity web service response version not supported.");
+                        }
                     }
                 }
             }
