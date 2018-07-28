@@ -1464,7 +1464,7 @@ namespace MeshCore.Network.Connections
                     client.Proxy = _node.Proxy;
                     client.QueryString.Add("port", externalPort.ToString());
                     client.QueryString.Add("ts", DateTime.UtcNow.ToBinary().ToString());
-                    client.Timeout = 10000;
+                    client.Timeout = 20000;
 
                     using (BinaryReader bR = new BinaryReader(client.OpenRead(IPv4_CONNECTIVITY_CHECK_WEB_SERVICE)))
                     {
