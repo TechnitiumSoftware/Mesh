@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutomaticUpdate.Client", "A
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutomaticUpdate.Update", "AutomaticUpdate.Update\AutomaticUpdate.Update.csproj", "{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectivityWebService", "ConnectivityWebService\ConnectivityWebService.csproj", "{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +35,10 @@ Global
 		{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
