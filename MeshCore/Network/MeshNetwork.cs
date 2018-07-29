@@ -125,6 +125,9 @@ namespace MeshCore.Network
         readonly List<EndPoint> _dhtTorPeers = new List<EndPoint>();
         DateTime _dhtLastUpdated;
 
+        //tcp relay
+        readonly List<EndPoint> _tcpRelayPeers = new List<EndPoint>();
+
         //ping keep-alive timer
         const int PING_TIMER_INTERVAL = 15000;
         Timer _pingTimer;
@@ -415,7 +418,7 @@ namespace MeshCore.Network
             }
         }
 
-        internal static MeshNetwork AcceptPrivateNetworkInvitation(ConnectionManager connectionManager, Connection connection, BinaryNumber networkId, Stream channel)
+        internal static MeshNetwork AcceptPrivateNetworkInvitation(ConnectionManager connectionManager, Connection connection, Stream channel)
         {
             //establish secure channel with untrusted client using psk as userId expecting the opposite side to know the userId
             using (SecureChannelStream secureChannel = new SecureChannelServerStream(channel, connection.RemotePeerEP, connection.ViaRemotePeerEP, RENEGOTIATE_AFTER_BYTES_SENT, RENEGOTIATE_AFTER_SECONDS, connectionManager.Node.SupportedCiphers, SecureChannelOptions.PRE_SHARED_KEY_AUTHENTICATION_REQUIRED | SecureChannelOptions.CLIENT_AUTHENTICATION_REQUIRED, connectionManager.Node.UserId.Value, connectionManager.Node.UserId, connectionManager.Node.PrivateKey, null))
@@ -427,12 +430,6 @@ namespace MeshCore.Network
 
                 //create new private network with offline status
                 MeshNetwork privateNetwork = new MeshNetwork(connectionManager, connectionManager.Node.UserId, secureChannel.RemotePeerUserId, secureChannel.RemotePeerUserId.ToString(), false, MeshNetworkStatus.Offline, null);
-
-                if (privateNetwork._networkId != networkId)
-                {
-                    privateNetwork.Dispose();
-                    throw new MeshException("Invalid network id detected.");
-                }
 
                 //store the invitation message in network store
                 (new MessageItem("This private chat invitation was sent by " + connection.RemotePeerEP.ToString() + ".")).WriteTo(privateNetwork._store);
@@ -534,8 +531,11 @@ namespace MeshCore.Network
                 {
                     _connectionManager.DhtManager.BeginAnnounce(_networkId, _localNetworkOnly, new IPEndPoint(IPAddress.Any, _connectionManager.LocalPort), DhtCallback);
 
-                    //register network on tcp relays. tcp relays will auto announce network over DHT and register their network end point
-                    _connectionManager.TcpRelayClientRegisterHostedNetwork(_networkId);
+                    if (!_localNetworkOnly)
+                    {
+                        //register network on tcp relays. tcp relays will auto announce network over DHT and register their network end point
+                        _connectionManager.TcpRelayClientRegisterHostedNetwork(_networkId);
+                    }
                 }
 
                 _dhtLastUpdated = DateTime.UtcNow;
@@ -605,6 +605,22 @@ namespace MeshCore.Network
             }
         }
 
+        internal void TcpRelayClientReceivedPeers(Connection viaConnection, List<EndPoint> peerEPs)
+        {
+            Debug.Write(this.GetType().Name, "Tcp relay received network [" + _networkId + "] peers via " + viaConnection.RemotePeerId + " [" + viaConnection.RemotePeerEP + "]");
+
+            lock (_tcpRelayPeers)
+            {
+                foreach (EndPoint peerEP in peerEPs)
+                {
+                    if (!_tcpRelayPeers.Contains(peerEP))
+                        _tcpRelayPeers.Add(peerEP);
+
+                    BeginMakeVirtualConnection(peerEP, viaConnection);
+                }
+            }
+        }
+
         private void PingAsync(object state)
         {
             try
@@ -666,48 +682,93 @@ namespace MeshCore.Network
             });
         }
 
+        private void BeginMakeVirtualConnection(EndPoint peerEP, Connection viaConnection)
+        {
+            if (_status == MeshNetworkStatus.Offline)
+                return;
+
+            if (_localNetworkOnly && ((peerEP.AddressFamily == AddressFamily.Unspecified) || !NetUtilities.IsPrivateIP((peerEP as IPEndPoint).Address)))
+                return;
+
+            if (IsPeerConnected(peerEP))
+                return;
+
+            ThreadPool.QueueUserWorkItem(delegate (object state)
+            {
+                Connection connection;
+
+                try
+                {
+                    connection = _connectionManager.MakeVirtualConnection(viaConnection, peerEP); //make virtual connection
+                }
+                catch (Exception ex2)
+                {
+                    Debug.Write(this.GetType().Name, ex2);
+
+                    return;
+                }
+
+                try
+                {
+                    EstablishSecureChannelAndJoinNetwork(connection);
+                }
+                catch (Exception ex)
+                {
+                    Debug.Write(this.GetType().Name, ex);
+                }
+            });
+        }
+
         private void EstablishSecureChannelAndJoinNetwork(Connection connection)
         {
+            bool isInvitationPending = false;
+            byte[] psk;
+            BinaryNumber channelId;
+            ICollection<BinaryNumber> trustedUserIds;
+
+            switch (_type)
+            {
+                case MeshNetworkType.Private:
+                    isInvitationPending = IsInvitationPending();
+
+                    if (isInvitationPending)
+                    {
+                        psk = _otherPeer.PeerUserId.Value;
+                        channelId = _otherPeer.MaskedPeerUserId;
+                    }
+                    else
+                    {
+                        psk = _networkSecret.Value;
+                        channelId = _networkId;
+                    }
+
+                    trustedUserIds = new BinaryNumber[] { _otherPeer.PeerUserId };
+                    break;
+
+                case MeshNetworkType.Group:
+                    psk = _networkSecret.Value;
+                    channelId = _networkId;
+
+                    if (_groupLockNetwork)
+                        trustedUserIds = GetKnownPeerUserIdList();
+                    else
+                        trustedUserIds = null;
+
+                    break;
+
+                default:
+                    throw new NotSupportedException();
+            }
+
             //check if channel exists
-            if (connection.ChannelExists(_networkId))
+            if (connection.ChannelExists(channelId))
                 return;
 
             //request channel
-            Stream channel = connection.ConnectMeshNetwork(_networkId);
+            Stream channel = connection.ConnectMeshNetwork(channelId);
 
             try
             {
-                bool isInvitationPending = false;
-                byte[] psk;
-                ICollection<BinaryNumber> trustedUserIds;
-
-                switch (_type)
-                {
-                    case MeshNetworkType.Private:
-                        isInvitationPending = IsInvitationPending();
-
-                        if (isInvitationPending)
-                            psk = _otherPeer.PeerUserId.Value;
-                        else
-                            psk = _networkSecret.Value;
-
-                        trustedUserIds = new BinaryNumber[] { _otherPeer.PeerUserId };
-                        break;
-
-                    case MeshNetworkType.Group:
-                        psk = _networkSecret.Value;
-
-                        if (_groupLockNetwork)
-                            trustedUserIds = GetKnownPeerUserIdList();
-                        else
-                            trustedUserIds = null;
-
-                        break;
-
-                    default:
-                        throw new NotSupportedException();
-                }
-
                 //establish secure channel
                 SecureChannelStream secureChannel = new SecureChannelClientStream(channel, connection.RemotePeerEP, connection.ViaRemotePeerEP, RENEGOTIATE_AFTER_BYTES_SENT, RENEGOTIATE_AFTER_SECONDS, _connectionManager.Node.SupportedCiphers, SecureChannelOptions.PRE_SHARED_KEY_AUTHENTICATION_REQUIRED | SecureChannelOptions.CLIENT_AUTHENTICATION_REQUIRED, psk, _userId, _connectionManager.Node.PrivateKey, trustedUserIds);
 
@@ -1127,7 +1188,7 @@ namespace MeshCore.Network
                 _pingTimer.Change(PING_TIMER_INTERVAL, PING_TIMER_INTERVAL);
 
                 //start dht announce
-                _dhtAnnounceTimer.Change(5000, DHT_ANNOUNCE_TIMER_INTERVAL);
+                _dhtAnnounceTimer.Change(DHT_ANNOUNCE_TIMER_INITIAL_INTERVAL, DHT_ANNOUNCE_TIMER_INTERVAL);
                 _dhtAnnounceTimerIsRunning = true;
 
                 _status = MeshNetworkStatus.Online;
@@ -1151,7 +1212,7 @@ namespace MeshCore.Network
                 //stop ping timer
                 _pingTimer.Change(Timeout.Infinite, Timeout.Infinite);
 
-                //start dht announce
+                //stop dht announce
                 _dhtAnnounceTimer.Change(Timeout.Infinite, Timeout.Infinite);
                 _dhtAnnounceTimerIsRunning = false;
 
@@ -1185,6 +1246,12 @@ namespace MeshCore.Network
 
                     //connectivity status update
                     UpdateConnectivityStatus();
+
+                    if (!_localNetworkOnly)
+                    {
+                        //unregister network from tcp relays
+                        _connectionManager.TcpRelayClientUnregisterHostedNetwork(_networkId);
+                    }
                 });
             }
         }
@@ -1353,6 +1420,22 @@ namespace MeshCore.Network
         public TimeSpan DhtNextUpdateIn()
         {
             return _dhtLastUpdated.AddMilliseconds(DHT_ANNOUNCE_TIMER_INTERVAL) - DateTime.UtcNow;
+        }
+
+        public int TcpRelayGetTotalPeers()
+        {
+            lock (_tcpRelayPeers)
+            {
+                return _tcpRelayPeers.Count;
+            }
+        }
+
+        public EndPoint[] TcpRelayGetPeers()
+        {
+            lock (_tcpRelayPeers)
+            {
+                return _tcpRelayPeers.ToArray();
+            }
         }
 
         public void DeleteNetwork()
@@ -1621,8 +1704,20 @@ namespace MeshCore.Network
             set { _mute = value; }
         }
 
-        public bool IsDhtAnnounceRunning
-        { get { return _dhtAnnounceTimerIsRunning; } }
+        public bool IsIPv4DhtRunning
+        { get { return _dhtAnnounceTimerIsRunning && !_localNetworkOnly; } }
+
+        public bool IsIPv6DhtRunning
+        { get { return _dhtAnnounceTimerIsRunning && !_localNetworkOnly; } }
+
+        public bool IsLanDhtRunning
+        { get { return _dhtAnnounceTimerIsRunning && (_connectionManager.Node.Type == MeshNodeType.P2P); } }
+
+        public bool IsTorDhtRunning
+        { get { return _dhtAnnounceTimerIsRunning && (_connectionManager.Node.Type == MeshNodeType.Tor); } }
+
+        public bool IsTcpRelayClientRunning
+        { get { return !_localNetworkOnly; } }
 
         #endregion
 
@@ -2508,20 +2603,24 @@ namespace MeshCore.Network
 
                                         if (localOnly.LocalNetworkOnlyDateModified > _peer._network._localNetworkOnlyDateModified)
                                         {
-                                            _peer._network._localNetworkOnly = localOnly.LocalNetworkOnly;
                                             _peer._network._localNetworkOnlyDateModified = localOnly.LocalNetworkOnlyDateModified;
 
-                                            string infoText;
+                                            if (_peer._network._localNetworkOnly != localOnly.LocalNetworkOnly)
+                                            {
+                                                _peer._network._localNetworkOnly = localOnly.LocalNetworkOnly;
 
-                                            if (_peer._network._localNetworkOnly)
-                                                infoText = "Mesh group network was updated to work only on local LAN networks by " + _peer.ProfileDisplayName;
-                                            else
-                                                infoText = "Mesh group network was updated to work on Internet and local LAN networks by " + _peer.ProfileDisplayName;
+                                                string infoText;
 
-                                            MessageItem msg = new MessageItem(DateTime.UtcNow, _peer._peerUserId, null, MessageType.Info, infoText, null, null, 0, null);
-                                            msg.WriteTo(_peer._network._store);
+                                                if (_peer._network._localNetworkOnly)
+                                                    infoText = "Mesh group network was updated to work only on local LAN networks by " + _peer.ProfileDisplayName;
+                                                else
+                                                    infoText = "Mesh group network was updated to work on Internet and local LAN networks by " + _peer.ProfileDisplayName;
 
-                                            _peer._network.RaiseEventMessageReceived(_peer, msg);
+                                                MessageItem msg = new MessageItem(DateTime.UtcNow, _peer._peerUserId, null, MessageType.Info, infoText, null, null, 0, null);
+                                                msg.WriteTo(_peer._network._store);
+
+                                                _peer._network.RaiseEventMessageReceived(_peer, msg);
+                                            }
                                         }
 
                                         break;
@@ -2596,20 +2695,24 @@ namespace MeshCore.Network
 
                                         if (groupLock.GroupLockNetworkDateModified > _peer._network._groupLockNetworkDateModified)
                                         {
-                                            _peer._network._groupLockNetwork = groupLock.GroupLockNetwork;
                                             _peer._network._groupLockNetworkDateModified = groupLock.GroupLockNetworkDateModified;
 
-                                            string infoText;
+                                            if (_peer._network._groupLockNetwork != groupLock.GroupLockNetwork)
+                                            {
+                                                _peer._network._groupLockNetwork = groupLock.GroupLockNetwork;
 
-                                            if (_peer._network._groupLockNetwork)
-                                                infoText = "Mesh group network was locked by " + _peer.ProfileDisplayName;
-                                            else
-                                                infoText = "Mesh group network was unlocked by " + _peer.ProfileDisplayName;
+                                                string infoText;
 
-                                            MessageItem msg = new MessageItem(DateTime.UtcNow, _peer._peerUserId, null, MessageType.Info, infoText, null, null, 0, null);
-                                            msg.WriteTo(_peer._network._store);
+                                                if (_peer._network._groupLockNetwork)
+                                                    infoText = "Mesh group network was locked by " + _peer.ProfileDisplayName;
+                                                else
+                                                    infoText = "Mesh group network was unlocked by " + _peer.ProfileDisplayName;
 
-                                            _peer._network.RaiseEventMessageReceived(_peer, msg);
+                                                MessageItem msg = new MessageItem(DateTime.UtcNow, _peer._peerUserId, null, MessageType.Info, infoText, null, null, 0, null);
+                                                msg.WriteTo(_peer._network._store);
+
+                                                _peer._network.RaiseEventMessageReceived(_peer, msg);
+                                            }
                                         }
                                         break;
 
