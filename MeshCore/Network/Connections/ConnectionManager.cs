@@ -108,10 +108,12 @@ namespace MeshCore.Network.Connections
         readonly Dictionary<BinaryNumber, List<Connection>> _tcpRelayServerHostedNetworkConnections = new Dictionary<BinaryNumber, List<Connection>>();
 
         //internet connectivity
-        const int CONNECTIVITY_CHECK_TIMER_INTERVAL = 60 * 1000;
+        const int CONNECTIVITY_CHECK_TIMER_INTERVAL = 60 * 1000; //check every minute
+        const int CONNECTIVITY_RECHECK_TIMER_INTERVAL = 45 * 60 * 1000; //recheck every 45 mins
         readonly Timer _connectivityCheckTimer;
 
         readonly Uri IPv4_CONNECTIVITY_CHECK_WEB_SERVICE = new Uri("https://mesh.im/connectivity/check.aspx");
+        DateTime _ipv4InternetStatusLastCheckedOn;
         InternetConnectivityStatus _ipv4InternetStatus = InternetConnectivityStatus.Identifying;
         InternetGatewayDevice _upnpDevice;
         UPnPDeviceStatus _upnpDeviceStatus = UPnPDeviceStatus.Identifying;
@@ -268,8 +270,11 @@ namespace MeshCore.Network.Connections
                                     {
                                         if (_tcpRelayClientConnections.Count < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
                                         {
-                                            _tcpRelayClientConnections.Add(tcpRelayClientConnection);
-                                            tcpRelayClientConnection.EnableTcpRelayClientMode();
+                                            if (!_tcpRelayClientConnections.Contains(tcpRelayClientConnection))
+                                            {
+                                                _tcpRelayClientConnections.Add(tcpRelayClientConnection);
+                                                tcpRelayClientConnection.EnableTcpRelayClientMode();
+                                            }
                                         }
                                     }
                                 }
@@ -285,7 +290,7 @@ namespace MeshCore.Network.Connections
                 {
                     Debug.Write(this.GetType().Name, ex);
                 }
-            }, null, Timeout.Infinite, TCP_RELAY_CLIENT_TIMER_INTERVAL);
+            }, null, TCP_RELAY_CLIENT_TIMER_INTERVAL, TCP_RELAY_CLIENT_TIMER_INTERVAL);
 
             //start connectivity check timer
             _connectivityCheckTimer = new Timer(delegate (object state)
@@ -953,10 +958,12 @@ namespace MeshCore.Network.Connections
                 _connectionListByPeerId.Remove(connection.RemotePeerId);
             }
 
-            lock (_tcpRelayClientConnections)
+            if (connection.IsTcpRelayClientModeEnabled)
             {
-                if (connection.IsTcpRelayClientModeEnabled)
+                lock (_tcpRelayClientConnections)
+                {
                     _tcpRelayClientConnections.Remove(connection);
+                }
             }
         }
 
@@ -1137,16 +1144,25 @@ namespace MeshCore.Network.Connections
             if (_upnpDeviceStatus == UPnPDeviceStatus.Identifying)
                 _upnpDevice = null;
 
+            if ((DateTime.UtcNow - _ipv4InternetStatusLastCheckedOn).TotalMilliseconds > CONNECTIVITY_RECHECK_TIMER_INTERVAL)
+            {
+                _ipv4InternetStatus = InternetConnectivityStatus.Identifying;
+                _upnpDeviceStatus = UPnPDeviceStatus.Identifying;
+                _upnpDevice = null;
+            }
+
+            _ipv4InternetStatusLastCheckedOn = DateTime.UtcNow;
+
             EndPoint oldExternalEP = this.IPv4ExternalEndPoint;
             InternetConnectivityStatus oldInternetStatus = _ipv4InternetStatus;
             InternetConnectivityStatus newInternetStatus = InternetConnectivityStatus.Identifying;
-            UPnPDeviceStatus newUPnPStatus;
+            UPnPDeviceStatus newUPnPDeviceStatus;
             NetworkInfo defaultNetworkInfo;
 
             if (_node.EnableUPnP)
-                newUPnPStatus = UPnPDeviceStatus.Identifying;
+                newUPnPDeviceStatus = UPnPDeviceStatus.Identifying;
             else
-                newUPnPStatus = UPnPDeviceStatus.Disabled;
+                newUPnPDeviceStatus = UPnPDeviceStatus.Disabled;
 
             try
             {
@@ -1166,7 +1182,7 @@ namespace MeshCore.Network.Connections
                             throw new NotSupportedException("Proxy type not supported.");
                     }
 
-                    newUPnPStatus = UPnPDeviceStatus.Disabled;
+                    newUPnPDeviceStatus = UPnPDeviceStatus.Disabled;
                     return;
                 }
 
@@ -1175,7 +1191,7 @@ namespace MeshCore.Network.Connections
                 {
                     //no internet available;
                     newInternetStatus = InternetConnectivityStatus.NoInternetConnection;
-                    newUPnPStatus = UPnPDeviceStatus.Disabled;
+                    newUPnPDeviceStatus = UPnPDeviceStatus.Disabled;
                     return;
                 }
 
@@ -1183,7 +1199,7 @@ namespace MeshCore.Network.Connections
                 {
                     //public ip so, direct internet connection available
                     newInternetStatus = InternetConnectivityStatus.DirectInternetConnection;
-                    newUPnPStatus = UPnPDeviceStatus.Disabled;
+                    newUPnPDeviceStatus = UPnPDeviceStatus.Disabled;
                     _ipv4LocalLiveIP = defaultNetworkInfo.LocalIP;
                     return;
                 }
@@ -1192,7 +1208,7 @@ namespace MeshCore.Network.Connections
                     _ipv4LocalLiveIP = null;
                 }
 
-                if (newUPnPStatus == UPnPDeviceStatus.Disabled)
+                if (newUPnPDeviceStatus == UPnPDeviceStatus.Disabled)
                 {
                     newInternetStatus = InternetConnectivityStatus.NatOrFirewalledInternetConnection;
                     return;
@@ -1226,7 +1242,7 @@ namespace MeshCore.Network.Connections
                 if (_upnpDevice == null)
                 {
                     newInternetStatus = InternetConnectivityStatus.NatOrFirewalledInternetConnection;
-                    newUPnPStatus = UPnPDeviceStatus.DeviceNotFound;
+                    newUPnPDeviceStatus = UPnPDeviceStatus.DeviceNotFound;
                 }
                 else
                 {
@@ -1240,12 +1256,12 @@ namespace MeshCore.Network.Connections
                         if (_upnpExternalIP.ToString() == "0.0.0.0")
                         {
                             newInternetStatus = InternetConnectivityStatus.NoInternetConnection;
-                            newUPnPStatus = UPnPDeviceStatus.Disabled;
+                            newUPnPDeviceStatus = UPnPDeviceStatus.Disabled;
                             return; //external ip not available so no internet connection available
                         }
                         else if (NetUtilities.IsPrivateIP(_upnpExternalIP))
                         {
-                            newUPnPStatus = UPnPDeviceStatus.ExternalIpPrivate;
+                            newUPnPDeviceStatus = UPnPDeviceStatus.ExternalIpPrivate;
                             return; //no use of doing port forwarding for private upnp ip address
                         }
                     }
@@ -1256,11 +1272,11 @@ namespace MeshCore.Network.Connections
                         _upnpExternalIP = null;
                     }
 
-                    //do upnp port forwarding for Bit Chat
-                    if (_upnpDevice.ForwardPort(ProtocolType.Tcp, _localPort, new IPEndPoint(defaultNetworkInfo.LocalIP, _localPort), "Bit Chat", true))
-                        newUPnPStatus = UPnPDeviceStatus.PortForwarded;
+                    //do upnp port forwarding for Mesh
+                    if (_upnpDevice.ForwardPort(ProtocolType.Tcp, _localPort, new IPEndPoint(defaultNetworkInfo.LocalIP, _localPort), "Mesh", true))
+                        newUPnPDeviceStatus = UPnPDeviceStatus.PortForwarded;
                     else
-                        newUPnPStatus = UPnPDeviceStatus.PortForwardingFailed;
+                        newUPnPDeviceStatus = UPnPDeviceStatus.PortForwardingFailed;
                 }
             }
             catch (Exception ex)
@@ -1332,21 +1348,23 @@ namespace MeshCore.Network.Connections
                         }
                     }
 
-                    if ((newInternetStatus == InternetConnectivityStatus.NatInternetConnectionViaUPnPRouter) && (_upnpDeviceStatus != newUPnPStatus) && (newUPnPStatus == UPnPDeviceStatus.PortForwarded))
+                    if ((newInternetStatus == InternetConnectivityStatus.NatInternetConnectionViaUPnPRouter) && (_upnpDeviceStatus != newUPnPDeviceStatus) && (newUPnPDeviceStatus == UPnPDeviceStatus.PortForwarded))
                     {
                         if (_upnpDeviceStatus == UPnPDeviceStatus.PortForwardedNotAccessible)
                         {
-                            newUPnPStatus = UPnPDeviceStatus.PortForwardedNotAccessible;
+                            //done to prevent getting frequent requests from such clients to the connectivity web service.
+                            //connectivity check can still be done if user manually calls ReCheckConnectivity()
+                            newUPnPDeviceStatus = UPnPDeviceStatus.PortForwardedNotAccessible;
                         }
                         else if (!IPv4DoWebCheckIncomingConnection(_localPort))
                         {
-                            newUPnPStatus = UPnPDeviceStatus.PortForwardedNotAccessible;
+                            newUPnPDeviceStatus = UPnPDeviceStatus.PortForwardedNotAccessible;
                         }
                     }
 
                     //update status
                     _ipv4InternetStatus = newInternetStatus;
-                    _upnpDeviceStatus = newUPnPStatus;
+                    _upnpDeviceStatus = newUPnPDeviceStatus;
                 }
                 catch (Exception ex)
                 {
