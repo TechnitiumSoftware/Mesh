@@ -263,7 +263,9 @@ namespace MeshCore
                 }
 
                 _connectionManager.DhtManager.BeginAnnounce(maskedUserId, _allowOnlyLocalInboundInvitations, new IPEndPoint(IPAddress.Any, _connectionManager.LocalPort), null);
-                _connectionManager.TcpRelayClientRegisterHostedNetwork(_maskedUserId);
+
+                if (!_allowOnlyLocalInboundInvitations)
+                    _connectionManager.TcpRelayClientRegisterHostedNetwork(_maskedUserId);
             }, null, Timeout.Infinite, Timeout.Infinite);
 
             if (_allowInboundInvitations)
@@ -357,22 +359,32 @@ namespace MeshCore
 
             if (network == null)
             {
-                if (!_allowInboundInvitations || (_allowOnlyLocalInboundInvitations && ((connection.RemotePeerEP.AddressFamily == AddressFamily.Unspecified) || !NetUtilities.IsPrivateIP((connection.RemotePeerEP as IPEndPoint).Address))))
+                if (networkId.Equals(_maskedUserId))
                 {
+                    //private network connection invitation attempt
+                    if (!_allowInboundInvitations || (_allowOnlyLocalInboundInvitations && ((connection.RemotePeerEP.AddressFamily == AddressFamily.Unspecified) || !NetUtilities.IsPrivateIP((connection.RemotePeerEP as IPEndPoint).Address))))
+                    {
+                        channel.Dispose();
+                        return;
+                    }
+
+                    //accept invitation
+                    network = MeshNetwork.AcceptPrivateNetworkInvitation(_connectionManager, connection, channel);
+
+                    //add network
+                    lock (_networks)
+                    {
+                        _networks.Add(network.NetworkId, network);
+                    }
+
+                    //notify UI
+                    RaiseEventInvitationReceived(network);
+                }
+                else
+                {
+                    //no network found
                     channel.Dispose();
-                    return;
                 }
-
-                //probably private network connection invitation attempt
-                network = MeshNetwork.AcceptPrivateNetworkInvitation(_connectionManager, connection, networkId, channel);
-
-                lock (_networks)
-                {
-                    _networks.Add(network.NetworkId, network);
-                }
-
-                //notify UI
-                RaiseEventInvitationReceived(network);
             }
             else
             {
@@ -386,21 +398,24 @@ namespace MeshCore
             }
         }
 
-        internal void ReceivedMeshNetworkPeersViaTcpRelay(Connection viaConnection, BinaryNumber networkId, List<EndPoint> peerEPs)
+        internal void ReceivedMeshNetworkPeersViaTcpRelay(Connection viaConnection, BinaryNumber channelId, List<EndPoint> peerEPs)
         {
-            MeshNetwork network = null;
+            MeshNetwork foundNetwork = null;
 
             lock (_networks)
             {
-                if (_networks.ContainsKey(networkId))
-                    network = _networks[networkId];
+                foreach (KeyValuePair<BinaryNumber, MeshNetwork> network in _networks)
+                {
+                    if (network.Key.Equals(channelId) || ((network.Value.Type == MeshNetworkType.Private) && network.Value.OtherPeer.MaskedPeerUserId.Equals(channelId)))
+                    {
+                        foundNetwork = network.Value;
+                        break;
+                    }
+                }
             }
 
-            if (network != null)
-            {
-                foreach (EndPoint peerEP in peerEPs)
-                    network.BeginMakeConnection(peerEP, viaConnection);
-            }
+            if (foundNetwork != null)
+                foundNetwork.TcpRelayClientReceivedPeers(viaConnection, peerEPs);
         }
 
         internal void MeshNetworkChanged(MeshNetwork network, BinaryNumber newNetworkId)
@@ -582,7 +597,7 @@ namespace MeshCore
 
         public EndPoint[] GetTcpRelayNodes()
         {
-            return _connectionManager.GetTcpRelayNodes();
+            return _connectionManager.GetTcpRelayConnectionEndPoints();
         }
 
         public void WriteTo(BinaryWriter bW)
