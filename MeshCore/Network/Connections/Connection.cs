@@ -40,7 +40,7 @@ namespace MeshCore.Network.Connections
         PingRequest = 1,
         PingResponse = 2,
 
-        ConnectChannelNetwork = 3,
+        ConnectChannelMeshNetwork = 3,
         ChannelData = 4,
         DisconnectChannel = 5,
         ConnectChannelTunnel = 6,
@@ -73,7 +73,7 @@ namespace MeshCore.Network.Connections
         const int TCP_RELAY_CLIENT_MODE_TIMER_INTERVAL = 30000;
         Timer _tcpRelayClientModeTimer;
 
-        bool _hasRegisteredHostedNetwork = false;
+        bool _tcpRelayServerModeEnabled = false;
 
         #endregion
 
@@ -135,9 +135,6 @@ namespace MeshCore.Network.Connections
                     }
 
                     _connectionManager.ConnectionDisposed(this);
-
-                    if (_hasRegisteredHostedNetwork)
-                        _connectionManager.TcpRelayServerUnregisterAllHostedNetworks(this);
                 }
 
                 _disposed = true;
@@ -216,8 +213,8 @@ namespace MeshCore.Network.Connections
                             //do nothing!
                             break;
 
-                        case ConnectionSignal.ConnectChannelNetwork:
-                            #region ConnectChannelNetwork
+                        case ConnectionSignal.ConnectChannelMeshNetwork:
+                            #region ConnectChannelMeshNetwork
 
                             lock (_channels)
                             {
@@ -248,7 +245,7 @@ namespace MeshCore.Network.Connections
                             }
 
                             //check if tcp relay is hosted for the channel. reply back tcp relay peers list if available
-                            Connection[] connections = _connectionManager.GetTcpRelayServerHostedNetworkConnections(channelId.Clone());
+                            Connection[] connections = _connectionManager.GetTcpRelayServerHostedNetworkConnections(channelId);
 
                             if (connections.Length > 0)
                             {
@@ -259,7 +256,7 @@ namespace MeshCore.Network.Connections
                                     bW.Write(Convert.ToByte(connections.Length));
 
                                     foreach (Connection connection in connections)
-                                        (connection.RemotePeerEP as IPEndPoint).WriteTo(bW);
+                                        connection.RemotePeerEP.WriteTo(bW);
 
                                     byte[] data = mS.ToArray();
 
@@ -433,7 +430,7 @@ namespace MeshCore.Network.Connections
 
                             _connectionManager.TcpRelayServerRegisterHostedNetwork(this, channelId.Clone());
 
-                            _hasRegisteredHostedNetwork = true;
+                            _tcpRelayServerModeEnabled = true;
 
                             #endregion
                             break;
@@ -441,7 +438,7 @@ namespace MeshCore.Network.Connections
                         case ConnectionSignal.TcpRelayUnregisterHostedNetwork:
                             #region TcpRelayUnregisterHostedNetwork
 
-                            _connectionManager.TcpRelayServerUnregisterHostedNetwork(this, channelId.Clone());
+                            _connectionManager.TcpRelayServerUnregisterHostedNetwork(this, channelId);
 
                             #endregion
                             break;
@@ -457,7 +454,7 @@ namespace MeshCore.Network.Connections
                                 for (int i = 0; i < count; i++)
                                     peerEPs.Add(EndPointExtension.Parse(bR));
 
-                                _connectionManager.Node.ReceivedMeshNetworkPeersViaTcpRelay(this, channelId.Clone(), peerEPs);
+                                _connectionManager.Node.ReceivedMeshNetworkPeersViaTcpRelay(this, channelId, peerEPs);
                             }
                             #endregion
                             break;
@@ -548,7 +545,7 @@ namespace MeshCore.Network.Connections
             }
 
             //send connect signal
-            WriteFrame(ConnectionSignal.ConnectChannelNetwork, channelId, null, 0, 0);
+            WriteFrame(ConnectionSignal.ConnectChannelMeshNetwork, channelId, null, 0, 0);
 
             return channel;
         }
@@ -587,19 +584,26 @@ namespace MeshCore.Network.Connections
             {
                 _tcpRelayClientModeTimer = new Timer(delegate (object state)
                 {
-                    WriteFrame(ConnectionSignal.PingRequest, BinaryNumber.GenerateRandomNumber256(), null, 0, 0);
+                    try
+                    {
+                        WriteFrame(ConnectionSignal.PingRequest, BinaryNumber.GenerateRandomNumber256(), null, 0, 0);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
                 }, null, 1000, TCP_RELAY_CLIENT_MODE_TIMER_INTERVAL);
             }
         }
 
-        public void TcpRelayRegisterHostedNetwork(BinaryNumber channelId)
+        public void TcpRelayRegisterHostedNetwork(BinaryNumber networkId)
         {
-            WriteFrame(ConnectionSignal.TcpRelayRegisterHostedNetwork, channelId, null, 0, 0);
+            WriteFrame(ConnectionSignal.TcpRelayRegisterHostedNetwork, networkId, null, 0, 0);
         }
 
-        public void TcpRelayUnregisterHostedNetwork(BinaryNumber channelId)
+        public void TcpRelayUnregisterHostedNetwork(BinaryNumber networkId)
         {
-            WriteFrame(ConnectionSignal.TcpRelayUnregisterHostedNetwork, channelId, null, 0, 0);
+            WriteFrame(ConnectionSignal.TcpRelayUnregisterHostedNetwork, networkId, null, 0, 0);
         }
 
         #endregion
@@ -637,6 +641,9 @@ namespace MeshCore.Network.Connections
 
         public bool IsTcpRelayClientModeEnabled
         { get { return (_tcpRelayClientModeTimer != null); } }
+
+        public bool IsTcpRelayServerModeEnabled
+        { get { return _tcpRelayServerModeEnabled; } }
 
         #endregion
 

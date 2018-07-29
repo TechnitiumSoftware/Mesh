@@ -244,53 +244,7 @@ namespace MeshCore.Network.Connections
             _tcpListenerThread.Start();
 
             //start tcp relay client timer
-            _tcpRelayClientTimer = new Timer(delegate (object state)
-            {
-                try
-                {
-                    int tcpRelayClientConnectionCount;
-
-                    lock (_tcpRelayClientConnections)
-                    {
-                        tcpRelayClientConnectionCount = _tcpRelayClientConnections.Count;
-                    }
-
-                    if (tcpRelayClientConnectionCount < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
-                    {
-                        //find tcp relay connections via DHT
-                        foreach (IPEndPoint nodeEP in _dhtManager.GetIPv4KRandomNodeEPs())
-                        {
-                            ThreadPool.QueueUserWorkItem(delegate (object state2)
-                            {
-                                try
-                                {
-                                    Connection tcpRelayClientConnection = MakeConnection(state2 as IPEndPoint);
-
-                                    lock (_tcpRelayClientConnections)
-                                    {
-                                        if (_tcpRelayClientConnections.Count < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
-                                        {
-                                            if (!_tcpRelayClientConnections.Contains(tcpRelayClientConnection))
-                                            {
-                                                _tcpRelayClientConnections.Add(tcpRelayClientConnection);
-                                                tcpRelayClientConnection.EnableTcpRelayClientMode();
-                                            }
-                                        }
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    Debug.Write(this.GetType().Name, ex);
-                                }
-                            }, nodeEP);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.Write(this.GetType().Name, ex);
-                }
-            }, null, TCP_RELAY_CLIENT_TIMER_INTERVAL, TCP_RELAY_CLIENT_TIMER_INTERVAL);
+            _tcpRelayClientTimer = new Timer(TcpRelayClientFindRelayConnectionsAsync, null, TCP_RELAY_CLIENT_TIMER_INTERVAL, TCP_RELAY_CLIENT_TIMER_INTERVAL);
 
             //start connectivity check timer
             _connectivityCheckTimer = new Timer(delegate (object state)
@@ -959,12 +913,10 @@ namespace MeshCore.Network.Connections
             }
 
             if (connection.IsTcpRelayClientModeEnabled)
-            {
-                lock (_tcpRelayClientConnections)
-                {
-                    _tcpRelayClientConnections.Remove(connection);
-                }
-            }
+                TcpRelayClientRemoveRelayConnection(connection);
+
+            if (connection.IsTcpRelayServerModeEnabled)
+                TcpRelayServerUnregisterAllHostedNetworks(connection);
         }
 
         public void ClientProfileProxyUpdated()
@@ -1012,50 +964,55 @@ namespace MeshCore.Network.Connections
 
         #endregion
 
-        #region tcp relay
+        #region tcp relay server
 
-        public void TcpRelayServerRegisterHostedNetwork(Connection connection, BinaryNumber channelId)
+        public void TcpRelayServerRegisterHostedNetwork(Connection connection, BinaryNumber networkId)
         {
             //register hosted network connection
             lock (_tcpRelayServerHostedNetworkConnections)
             {
-                if (_tcpRelayServerHostedNetworkConnections.ContainsKey(channelId))
+                if (_tcpRelayServerHostedNetworkConnections.ContainsKey(networkId))
                 {
-                    List<Connection> connections = _tcpRelayServerHostedNetworkConnections[channelId];
+                    List<Connection> connections = _tcpRelayServerHostedNetworkConnections[networkId];
 
                     if (!connections.Contains(connection))
+                    {
                         connections.Add(connection);
+                        Debug.Write(this.GetType().Name, "Tcp relay server register hosted network [" + networkId + "] for " + connection.RemotePeerId + " [" + connection.RemotePeerEP + "]");
+                    }
                 }
                 else
                 {
                     List<Connection> connections = new List<Connection>();
                     connections.Add(connection);
 
-                    _tcpRelayServerHostedNetworkConnections.Add(channelId, connections);
+                    _tcpRelayServerHostedNetworkConnections.Add(networkId, connections);
+                    Debug.Write(this.GetType().Name, "Tcp relay server register hosted network [" + networkId + "] for " + connection.RemotePeerId + " [" + connection.RemotePeerEP + "]");
                 }
             }
 
             //announce self on DHT for the hosted network
-            _dhtManager.BeginAnnounce(channelId, false, new IPEndPoint(IPAddress.Any, _localPort), null);
+            _dhtManager.BeginAnnounce(networkId, false, new IPEndPoint(IPAddress.Any, _localPort), null);
         }
 
-        public void TcpRelayServerUnregisterHostedNetwork(Connection connection, BinaryNumber channelId)
+        public void TcpRelayServerUnregisterHostedNetwork(Connection connection, BinaryNumber networkId)
         {
             lock (_tcpRelayServerHostedNetworkConnections)
             {
-                if (_tcpRelayServerHostedNetworkConnections.ContainsKey(channelId))
+                if (_tcpRelayServerHostedNetworkConnections.ContainsKey(networkId))
                 {
-                    List<Connection> connections = _tcpRelayServerHostedNetworkConnections[channelId];
+                    List<Connection> connections = _tcpRelayServerHostedNetworkConnections[networkId];
 
                     connections.Remove(connection);
+                    Debug.Write(this.GetType().Name, "Tcp relay server unregister hosted network [" + networkId + "] for " + connection.RemotePeerId + " [" + connection.RemotePeerEP + "]");
 
                     if (connections.Count == 0)
-                        _tcpRelayServerHostedNetworkConnections.Remove(channelId);
+                        _tcpRelayServerHostedNetworkConnections.Remove(networkId);
                 }
             }
         }
 
-        public void TcpRelayServerUnregisterAllHostedNetworks(Connection connection)
+        private void TcpRelayServerUnregisterAllHostedNetworks(Connection connection)
         {
             lock (_tcpRelayServerHostedNetworkConnections)
             {
@@ -1069,23 +1026,79 @@ namespace MeshCore.Network.Connections
                         emptyNetworks.Add(hostedNetwork.Key);
                 }
 
-                foreach (BinaryNumber channelId in emptyNetworks)
-                    _tcpRelayServerHostedNetworkConnections.Remove(channelId);
+                foreach (BinaryNumber networkId in emptyNetworks)
+                    _tcpRelayServerHostedNetworkConnections.Remove(networkId);
             }
+
+            Debug.Write(this.GetType().Name, "Tcp relay server unregister all hosted networks for " + connection.RemotePeerId + " [" + connection.RemotePeerEP + "]");
         }
 
-        public Connection[] GetTcpRelayServerHostedNetworkConnections(BinaryNumber channelId)
+        public Connection[] GetTcpRelayServerHostedNetworkConnections(BinaryNumber networkId)
         {
             lock (_tcpRelayServerHostedNetworkConnections)
             {
-                if (_tcpRelayServerHostedNetworkConnections.ContainsKey(channelId))
-                    return _tcpRelayServerHostedNetworkConnections[channelId].ToArray();
+                if (_tcpRelayServerHostedNetworkConnections.ContainsKey(networkId))
+                    return _tcpRelayServerHostedNetworkConnections[networkId].ToArray();
             }
 
             return new Connection[] { };
         }
 
-        public void TcpRelayClientRegisterHostedNetwork(BinaryNumber channelId)
+        #endregion
+
+        #region tcp relay client
+
+        private void TcpRelayClientFindRelayConnectionsAsync(object state)
+        {
+            try
+            {
+                int tcpRelayClientConnectionCount;
+
+                lock (_tcpRelayClientConnections)
+                {
+                    tcpRelayClientConnectionCount = _tcpRelayClientConnections.Count;
+                }
+
+                if (tcpRelayClientConnectionCount < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
+                {
+                    //find tcp relay connections via DHT
+                    foreach (IPEndPoint nodeEP in _dhtManager.GetIPv4KRandomNodeEPs())
+                    {
+                        ThreadPool.QueueUserWorkItem(delegate (object state2)
+                        {
+                            try
+                            {
+                                Connection tcpRelayClientConnection = MakeConnection(state2 as IPEndPoint);
+
+                                lock (_tcpRelayClientConnections)
+                                {
+                                    if (_tcpRelayClientConnections.Count < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
+                                    {
+                                        if (!_tcpRelayClientConnections.Contains(tcpRelayClientConnection))
+                                        {
+                                            _tcpRelayClientConnections.Add(tcpRelayClientConnection);
+                                            tcpRelayClientConnection.EnableTcpRelayClientMode();
+
+                                            Debug.Write(this.GetType().Name, "Tcp relay client connection added: " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.Write(this.GetType().Name, ex);
+                            }
+                        }, nodeEP);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+            }
+        }
+
+        public void TcpRelayClientRegisterHostedNetwork(BinaryNumber networkId)
         {
             lock (_tcpRelayClientConnections)
             {
@@ -1093,7 +1106,9 @@ namespace MeshCore.Network.Connections
                 {
                     try
                     {
-                        tcpRelayClientConnection.TcpRelayRegisterHostedNetwork(channelId);
+                        tcpRelayClientConnection.TcpRelayRegisterHostedNetwork(networkId);
+
+                        Debug.Write(this.GetType().Name, "Tcp relay client registered hosted network [" + networkId + "] on " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
                     }
                     catch (Exception ex)
                     {
@@ -1103,7 +1118,7 @@ namespace MeshCore.Network.Connections
             }
         }
 
-        public void TcpRelayClientUnregisterHostedNetwork(BinaryNumber channelId)
+        public void TcpRelayClientUnregisterHostedNetwork(BinaryNumber networkId)
         {
             lock (_tcpRelayClientConnections)
             {
@@ -1111,7 +1126,9 @@ namespace MeshCore.Network.Connections
                 {
                     try
                     {
-                        tcpRelayClientConnection.TcpRelayUnregisterHostedNetwork(channelId);
+                        tcpRelayClientConnection.TcpRelayUnregisterHostedNetwork(networkId);
+
+                        Debug.Write(this.GetType().Name, "Tcp relay client unregistered hosted network [" + networkId + "] on " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
                     }
                     catch (Exception ex)
                     {
@@ -1121,7 +1138,17 @@ namespace MeshCore.Network.Connections
             }
         }
 
-        public EndPoint[] GetTcpRelayNodes()
+        private void TcpRelayClientRemoveRelayConnection(Connection connection)
+        {
+            lock (_tcpRelayClientConnections)
+            {
+                _tcpRelayClientConnections.Remove(connection);
+            }
+
+            Debug.Write(this.GetType().Name, "Tcp relay client connection removed: " + connection.RemotePeerId + " [" + connection.RemotePeerEP + "]");
+        }
+
+        public EndPoint[] GetTcpRelayConnectionEndPoints()
         {
             lock (_tcpRelayClientConnections)
             {
