@@ -121,8 +121,11 @@ namespace MeshCore.Network.Connections
         IPAddress _upnpExternalIP;
         EndPoint _ipv4ConnectivityCheckExternalEP;
 
+        readonly Uri IPv6_CONNECTIVITY_CHECK_WEB_SERVICE = null; //no ipv6 hosting available for now
+        DateTime _ipv6InternetStatusLastCheckedOn;
         InternetConnectivityStatus _ipv6InternetStatus = InternetConnectivityStatus.Identifying;
         IPAddress _ipv6LocalLiveIP;
+        EndPoint _ipv6ConnectivityCheckExternalEP;
 
         readonly int _localPort;
 
@@ -1344,8 +1347,10 @@ namespace MeshCore.Network.Connections
                                     {
                                         case InternetConnectivityStatus.DirectInternetConnection:
                                             if (!IPv4DoWebCheckIncomingConnection(_localPort))
+                                            {
+                                                newInternetStatus = InternetConnectivityStatus.NatOrFirewalledInternetConnection;
                                                 _ipv4LocalLiveIP = null;
-
+                                            }
                                             break;
 
                                         case InternetConnectivityStatus.NatOrFirewalledInternetConnection:
@@ -1402,6 +1407,11 @@ namespace MeshCore.Network.Connections
 
         private void IPv6ConnectivityCheck()
         {
+            if ((DateTime.UtcNow - _ipv6InternetStatusLastCheckedOn).TotalMilliseconds > CONNECTIVITY_RECHECK_TIMER_INTERVAL)
+                _ipv6InternetStatus = InternetConnectivityStatus.Identifying;
+
+            _ipv6InternetStatusLastCheckedOn = DateTime.UtcNow;
+
             EndPoint oldExternalEP = this.IPv6ExternalEndPoint;
             InternetConnectivityStatus oldInternetStatus = _ipv6InternetStatus;
             InternetConnectivityStatus newInternetStatus = InternetConnectivityStatus.Identifying;
@@ -1464,6 +1474,7 @@ namespace MeshCore.Network.Connections
                         {
                             case InternetConnectivityStatus.NoInternetConnection:
                                 _ipv6LocalLiveIP = null;
+                                _ipv6ConnectivityCheckExternalEP = null;
                                 break;
 
                             case InternetConnectivityStatus.HttpProxyInternetConnection:
@@ -1474,13 +1485,23 @@ namespace MeshCore.Network.Connections
                                     newInternetStatus = InternetConnectivityStatus.NoProxyInternetConnection;
 
                                 _ipv6LocalLiveIP = null;
+                                _ipv6ConnectivityCheckExternalEP = null;
                                 break;
 
                             default:
-                                if (!WebUtilities.IsWebAccessible(null, null, WebClientExNetworkType.IPv6Only, 10000, false))
+                                if (WebUtilities.IsWebAccessible(null, null, WebClientExNetworkType.IPv6Only, 10000, false))
+                                {
+                                    if (!IPv6DoWebCheckIncomingConnection(_localPort))
+                                    {
+                                        newInternetStatus = InternetConnectivityStatus.FirewalledInternetConnection;
+                                        _ipv6LocalLiveIP = null;
+                                    }
+                                }
+                                else
                                 {
                                     newInternetStatus = InternetConnectivityStatus.NoInternetConnection;
                                     _ipv6LocalLiveIP = null;
+                                    _ipv6ConnectivityCheckExternalEP = null;
                                 }
                                 break;
                         }
@@ -1498,8 +1519,8 @@ namespace MeshCore.Network.Connections
 
         private bool IPv4DoWebCheckIncomingConnection(int externalPort)
         {
-            bool _webCheckError = false;
-            bool _webCheckSuccess = false;
+            bool webCheckError = false;
+            bool webCheckSuccess = false;
 
             try
             {
@@ -1513,15 +1534,13 @@ namespace MeshCore.Network.Connections
 
                     using (BinaryReader bR = new BinaryReader(client.OpenRead(IPv4_CONNECTIVITY_CHECK_WEB_SERVICE)))
                     {
-                        _webCheckError = false;
-
                         switch (bR.ReadByte()) //version
                         {
                             case 1:
-                                _webCheckSuccess = bR.ReadBoolean(); //test status
+                                webCheckSuccess = bR.ReadBoolean(); //test status
                                 EndPoint selfEP = EndPointExtension.Parse(bR); //self end-point
 
-                                if (_webCheckSuccess)
+                                if (webCheckSuccess)
                                     _ipv4ConnectivityCheckExternalEP = selfEP;
                                 else
                                     _ipv4ConnectivityCheckExternalEP = null;
@@ -1543,12 +1562,65 @@ namespace MeshCore.Network.Connections
             {
                 Debug.Write(this.GetType().Name, ex);
 
-                _webCheckError = true;
-                _webCheckSuccess = false;
+                webCheckError = true;
+                webCheckSuccess = false;
                 _ipv4ConnectivityCheckExternalEP = null;
             }
 
-            return _webCheckSuccess || _webCheckError;
+            return webCheckSuccess || webCheckError;
+        }
+
+        private bool IPv6DoWebCheckIncomingConnection(int externalPort)
+        {
+            bool webCheckError = false;
+            bool webCheckSuccess = false;
+
+            try
+            {
+                using (WebClientEx client = new WebClientEx())
+                {
+                    client.NetworkType = WebClientExNetworkType.IPv6Only;
+                    client.Proxy = _node.Proxy;
+                    client.QueryString.Add("port", externalPort.ToString());
+                    client.QueryString.Add("ts", DateTime.UtcNow.ToBinary().ToString());
+                    client.Timeout = 20000;
+
+                    using (BinaryReader bR = new BinaryReader(client.OpenRead(IPv6_CONNECTIVITY_CHECK_WEB_SERVICE)))
+                    {
+                        switch (bR.ReadByte()) //version
+                        {
+                            case 1:
+                                webCheckSuccess = bR.ReadBoolean(); //test status
+                                EndPoint selfEP = EndPointExtension.Parse(bR); //self end-point
+
+                                if (webCheckSuccess)
+                                    _ipv6ConnectivityCheckExternalEP = selfEP;
+                                else
+                                    _ipv6ConnectivityCheckExternalEP = null;
+
+                                //read peers
+                                int count = bR.ReadByte();
+                                for (int i = 0; i < count; i++)
+                                    _dhtManager.AddNode(EndPointExtension.Parse(bR));
+
+                                break;
+
+                            default:
+                                throw new NotSupportedException("Connectivity web service response version not supported.");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.Write(this.GetType().Name, ex);
+
+                webCheckError = true;
+                webCheckSuccess = false;
+                _ipv6ConnectivityCheckExternalEP = null;
+            }
+
+            return webCheckSuccess || webCheckError;
         }
 
         public void ReCheckConnectivity()
@@ -1664,8 +1736,11 @@ namespace MeshCore.Network.Connections
                         else
                             return new IPEndPoint(_ipv6LocalLiveIP, _localPort);
 
-                    default:
+                    case InternetConnectivityStatus.Identifying:
                         return null;
+
+                    default:
+                        return _ipv6ConnectivityCheckExternalEP;
                 }
             }
         }
