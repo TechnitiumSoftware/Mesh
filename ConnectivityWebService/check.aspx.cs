@@ -34,10 +34,13 @@ namespace ConnectivityWebService
         const int SOCKET_SEND_TIMEOUT = 10000;
         const int SOCKET_RECV_TIMEOUT = 10000;
 
-        const int MAINTENANCE_TIMER_INTERVAL = 30000;
-        const int PEER_ENDPOINT_EXPIRY_INTERVAL = 900000;
+        const int MAINTENANCE_TIMER_INTERVAL = 30 * 1000;
+        const int PEER_ENDPOINT_EXPIRY_INTERVAL = 1 * 60 * 60 * 1000; //1hr expiry
 
-        static readonly Dictionary<IPEndPoint, DateTime> _openPeerEPs = new Dictionary<IPEndPoint, DateTime>();
+        const int MIN_PEER_ENDPOINTS = 50;
+        const int MAX_PEER_ENDPOINTS = 100;
+
+        static readonly List<PeerEndPoint> _openPeerEPs = new List<PeerEndPoint>(MAX_PEER_ENDPOINTS);
         static readonly ReaderWriterLockSlim _openPeerEPsLock = new ReaderWriterLockSlim();
         static readonly System.Threading.Timer _maintenanceTimer;
 
@@ -45,20 +48,48 @@ namespace ConnectivityWebService
         {
             _maintenanceTimer = new System.Threading.Timer(delegate (object state)
             {
+                _openPeerEPsLock.EnterReadLock();
+                try
+                {
+                    if (_openPeerEPs.Count < MIN_PEER_ENDPOINTS)
+                        return;
+                }
+                catch
+                {
+                    //ignore errors
+                }
+                finally
+                {
+                    _openPeerEPsLock.ExitReadLock();
+                }
+
                 _openPeerEPsLock.EnterWriteLock();
                 try
                 {
                     DateTime currentTime = DateTime.UtcNow;
-                    List<IPEndPoint> expiredPeerEPs = new List<IPEndPoint>();
+                    List<PeerEndPoint> expiredPeerEPs = new List<PeerEndPoint>();
 
-                    foreach (KeyValuePair<IPEndPoint, DateTime> peerEP in _openPeerEPs)
+                    foreach (PeerEndPoint peerEP in _openPeerEPs)
                     {
-                        if ((currentTime - peerEP.Value).TotalMilliseconds > PEER_ENDPOINT_EXPIRY_INTERVAL)
-                            expiredPeerEPs.Add(peerEP.Key);
+                        if ((currentTime - peerEP.AddedOn).TotalMilliseconds > PEER_ENDPOINT_EXPIRY_INTERVAL)
+                            expiredPeerEPs.Add(peerEP);
                     }
 
-                    foreach (IPEndPoint peerEP in expiredPeerEPs)
+                    expiredPeerEPs.Sort(delegate (PeerEndPoint x, PeerEndPoint y)
+                    {
+                        return x.AddedOn.CompareTo(y.AddedOn);
+                    });
+
+                    int peersToRemove = _openPeerEPs.Count - MIN_PEER_ENDPOINTS;
+
+                    foreach (PeerEndPoint peerEP in expiredPeerEPs)
+                    {
+                        if (peersToRemove < 1)
+                            break;
+
                         _openPeerEPs.Remove(peerEP);
+                        peersToRemove--;
+                    }
                 }
                 catch
                 {
@@ -73,7 +104,14 @@ namespace ConnectivityWebService
 
         protected void Page_Load(object sender, EventArgs e)
         {
-            IPEndPoint remoteEP = new IPEndPoint(IPAddress.Parse(Request.UserHostAddress), ushort.Parse(Request.QueryString["port"]));
+            if (!ushort.TryParse(Request.QueryString["port"], out ushort port))
+            {
+                Response.StatusCode = 400;
+                Response.End();
+                return;
+            }
+
+            IPEndPoint remoteEP = new IPEndPoint(IPAddress.Parse(Request.UserHostAddress), port);
             bool success = false;
 
             try
@@ -97,25 +135,25 @@ namespace ConnectivityWebService
             { }
 
             List<IPEndPoint> peerEPs = new List<IPEndPoint>();
-            bool add = false;
+            bool add;
 
             _openPeerEPsLock.EnterReadLock();
             try
             {
-                foreach (IPEndPoint peerEP in _openPeerEPs.Keys)
-                {
-                    if (!remoteEP.Equals(peerEP))
-                        peerEPs.Add(peerEP);
-                }
+                add = (_openPeerEPs.Count < MAX_PEER_ENDPOINTS);
 
-                if (success)
+                foreach (PeerEndPoint peerEP in _openPeerEPs)
                 {
-                    if (_openPeerEPs.Count < 100)
+                    if (remoteEP.Equals(peerEP.EndPoint))
                     {
-                        if (_openPeerEPs.ContainsKey(remoteEP))
-                            _openPeerEPs[remoteEP] = DateTime.UtcNow;
-                        else
-                            add = true;
+                        add = false;
+
+                        if (success)
+                            peerEP.AddedOn = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        peerEPs.Add(peerEP.EndPoint);
                     }
                 }
             }
@@ -129,8 +167,8 @@ namespace ConnectivityWebService
                 _openPeerEPsLock.EnterWriteLock();
                 try
                 {
-                    if (_openPeerEPs.Count < 100)
-                        _openPeerEPs.Add(remoteEP, DateTime.UtcNow);
+                    if (_openPeerEPs.Count < MAX_PEER_ENDPOINTS)
+                        _openPeerEPs.Add(new PeerEndPoint(remoteEP));
                 }
                 finally
                 {
@@ -197,6 +235,32 @@ namespace ConnectivityWebService
 
                 if (crlfCount == 4)
                     break; //http request completed
+            }
+        }
+
+        class PeerEndPoint
+        {
+            public IPEndPoint EndPoint;
+            public DateTime AddedOn;
+
+            public PeerEndPoint(IPEndPoint endPoint)
+            {
+                this.EndPoint = endPoint;
+                this.AddedOn = DateTime.UtcNow;
+            }
+
+            public override bool Equals(object obj)
+            {
+                PeerEndPoint other = obj as PeerEndPoint;
+                if (obj == null)
+                    return false;
+
+                return this.EndPoint.Equals(other.EndPoint);
+            }
+
+            public override int GetHashCode()
+            {
+                return this.EndPoint.GetHashCode();
             }
         }
     }
