@@ -92,7 +92,7 @@ namespace MeshCore.Network.DHT
                 //add known bootstrap nodes
                 _torInternetDhtNode.AddNode(torBootstrapNodes);
             }
-            
+
             if (enableLocalNetworkDht)
             {
                 //start network watcher
@@ -200,6 +200,9 @@ namespace MeshCore.Network.DHT
                                 if (IPAddress.IsLoopback(network.LocalIP))
                                     continue; //skip loopback networks
 
+                                if (!NetUtilities.IsPrivateIP(network.LocalIP))
+                                    continue; //skip public networks
+
                                 _localNetworkDhtManagers.Add(new LocalNetworkDhtManager(network));
 
                                 Debug.Write(this.GetType().Name, "local network dht manager created: " + network.LocalIP.ToString());
@@ -251,11 +254,15 @@ namespace MeshCore.Network.DHT
             switch (nodeEP.AddressFamily)
             {
                 case AddressFamily.InterNetwork:
-                    _ipv4InternetDhtNode.AddNode(nodeEP);
+                    if (!NetUtilities.IsPrivateIPv4((nodeEP as IPEndPoint).Address))
+                        _ipv4InternetDhtNode.AddNode(nodeEP);
+
                     break;
 
                 case AddressFamily.InterNetworkV6:
-                    _ipv6InternetDhtNode.AddNode(nodeEP);
+                    if (NetUtilities.IsPublicIPv6((nodeEP as IPEndPoint).Address))
+                        _ipv6InternetDhtNode.AddNode(nodeEP);
+
                     break;
 
                 case AddressFamily.Unspecified:
