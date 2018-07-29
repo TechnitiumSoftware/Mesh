@@ -683,6 +683,12 @@ namespace MeshCore.Network.DHT
 
             public void StorePeer(BinaryNumber networkId, EndPoint peerEP)
             {
+                if ((peerEP.AddressFamily == AddressFamily.InterNetwork) && (peerEP as IPEndPoint).Address.Equals(IPAddress.Any))
+                    return; //avoid storing [0.0.0.0]
+
+                if ((peerEP.AddressFamily == AddressFamily.InterNetworkV6) && (peerEP as IPEndPoint).Address.Equals(IPAddress.IPv6Any))
+                    return; //avoid storing [::]
+
                 List<PeerEndPoint> peerList;
 
                 lock (_data)
