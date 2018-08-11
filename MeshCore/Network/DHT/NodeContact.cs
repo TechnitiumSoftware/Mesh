@@ -38,7 +38,7 @@ namespace MeshCore.Network.DHT
         readonly EndPoint _nodeEP;
         readonly BinaryNumber _nodeId;
 
-        protected bool _currentNode;
+        protected bool _isCurrentNode;
         DateTime _lastSeen;
         int _successfulRpcCount = 0;
         int _failRpcCount = 0;
@@ -89,7 +89,7 @@ namespace MeshCore.Network.DHT
 
         public bool IsStale()
         {
-            if (_currentNode)
+            if (_isCurrentNode)
                 return false;
             else
                 return ((_failRpcCount > NODE_RPC_FAIL_LIMIT) || ((DateTime.UtcNow - _lastSeen).TotalSeconds > NODE_STALE_TIMEOUT_SECONDS));
@@ -151,7 +151,7 @@ namespace MeshCore.Network.DHT
         { get { return _nodeId; } }
 
         public bool IsCurrentNode
-        { get { return _currentNode; } }
+        { get { return _isCurrentNode; } }
 
         public DateTime LastSeen
         { get { return _lastSeen; } }

@@ -163,7 +163,7 @@ namespace MeshCore.Network.DHT
         public void WriteTo(BinaryWriter bW)
         {
             bW.Write((byte)1); //version
-            _sourceNodeEP.WriteTo(bW); //source node port
+            _sourceNodeEP.WriteTo(bW); //source node EP
             bW.Write((byte)_type); //type
 
             switch (_type)

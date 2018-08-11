@@ -668,13 +668,13 @@ namespace MeshCore.Network.DHT
             public CurrentNode(EndPoint nodeEP)
                 : base(nodeEP)
             {
-                _currentNode = true;
+                _isCurrentNode = true;
             }
 
             public CurrentNode(BinaryNumber nodeId, EndPoint nodeEP)
                 : base(nodeId, nodeEP)
             {
-                _currentNode = true;
+                _isCurrentNode = true;
             }
 
             #endregion
@@ -683,6 +683,9 @@ namespace MeshCore.Network.DHT
 
             public void StorePeer(BinaryNumber networkId, EndPoint peerEP)
             {
+                if (NodeEP.AddressFamily != peerEP.AddressFamily)
+                    return; //avoid storing cross family peer end points
+
                 if ((peerEP.AddressFamily == AddressFamily.InterNetwork) && (peerEP as IPEndPoint).Address.Equals(IPAddress.Any))
                     return; //avoid storing [0.0.0.0]
 
