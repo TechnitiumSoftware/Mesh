@@ -220,7 +220,7 @@ namespace MeshCore.Network.DHT
                         //add local network dht managers for new online networks
                         if (newNetworks.Count > 0)
                         {
-                            foreach (NetworkInfo network in _networks)
+                            foreach (NetworkInfo network in newNetworks)
                             {
                                 if (IPAddress.IsLoopback(network.LocalIP))
                                     continue; //skip loopback networks
@@ -457,6 +457,11 @@ namespace MeshCore.Network.DHT
             return _ipv4InternetDhtNode.GetKRandomNodeEPs();
         }
 
+        public EndPoint[] GetIPv6KRandomNodeEPs()
+        {
+            return _ipv6InternetDhtNode.GetKRandomNodeEPs();
+        }
+
         #endregion
 
         #region properties
@@ -678,8 +683,8 @@ namespace MeshCore.Network.DHT
                         {
                             IPAddress remoteNodeIP = (remoteEP as IPEndPoint).Address;
 
-                            if (NetUtilities.IsIPv4MappedIPv6Address(remoteNodeIP))
-                                remoteNodeIP = NetUtilities.ConvertFromIPv4MappedIPv6Address(remoteNodeIP);
+                            if (remoteNodeIP.IsIPv4MappedToIPv6)
+                                remoteNodeIP = remoteNodeIP.MapToIPv4();
 
                             if (remoteNodeIP.AddressFamily == AddressFamily.InterNetworkV6)
                                 remoteNodeIP.ScopeId = 0;
@@ -731,8 +736,8 @@ namespace MeshCore.Network.DHT
                                 {
                                     IPEndPoint remoteNodeEP = socket.RemoteEndPoint as IPEndPoint;
 
-                                    if (NetUtilities.IsIPv4MappedIPv6Address(remoteNodeEP.Address))
-                                        remoteNodeEP = new IPEndPoint(NetUtilities.ConvertFromIPv4MappedIPv6Address(remoteNodeEP.Address), remoteNodeEP.Port);
+                                    if (remoteNodeEP.Address.IsIPv4MappedToIPv6)
+                                        remoteNodeEP = new IPEndPoint(remoteNodeEP.Address.MapToIPv4(), remoteNodeEP.Port);
 
                                     _dhtNode.AcceptConnection(s, remoteNodeEP);
                                 }
@@ -759,7 +764,7 @@ namespace MeshCore.Network.DHT
                     IPAddress broadcastIP = _network.BroadcastIP;
 
                     if (_udpListener.AddressFamily == AddressFamily.InterNetworkV6)
-                        broadcastIP = NetUtilities.ConvertToIPv4MappedIPv6Address(broadcastIP);
+                        broadcastIP = broadcastIP.MapToIPv6();
 
                     try
                     {
@@ -799,6 +804,11 @@ namespace MeshCore.Network.DHT
                             if (i < ANNOUNCEMENT_RETRY_COUNT - 1)
                                 Thread.Sleep(ANNOUNCEMENT_RETRY_INTERVAL);
                         }
+                    }
+                    else
+                    {
+                        //stop announcement since one or more nodes were found
+                        _announceTimer.Change(Timeout.Infinite, Timeout.Infinite);
                     }
                 }
                 catch (Exception ex)
