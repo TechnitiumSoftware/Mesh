@@ -44,7 +44,10 @@ namespace MeshCore.Network.Connections
         NatOrFirewalledInternetConnection = 6,
         FirewalledInternetConnection = 7,
         ProxyConnectionFailed = 8,
-        NoProxyInternetConnection = 9
+        NoProxyInternetConnection = 9,
+        TorInternetConnection = 10,
+        TorInternetConnectionFailed = 11,
+        NoTorInternetConnection = 12
     }
 
     public enum UPnPDeviceStatus
@@ -100,7 +103,8 @@ namespace MeshCore.Network.Connections
 
         //tcp relay
         const int MAX_TCP_RELAY_CLIENT_CONNECTIONS = 3;
-        readonly List<Connection> _tcpRelayClientConnections = new List<Connection>();
+        readonly List<Connection> _ipv4TcpRelayClientConnections = new List<Connection>();
+        readonly List<Connection> _ipv6TcpRelayClientConnections = new List<Connection>();
 
         const int TCP_RELAY_CLIENT_TIMER_INTERVAL = 30000;
         readonly Timer _tcpRelayClientTimer;
@@ -121,7 +125,7 @@ namespace MeshCore.Network.Connections
         IPAddress _upnpExternalIP;
         EndPoint _ipv4ConnectivityCheckExternalEP;
 
-        readonly Uri IPv6_CONNECTIVITY_CHECK_WEB_SERVICE = null; //no ipv6 hosting available for now
+        readonly Uri IPv6_CONNECTIVITY_CHECK_WEB_SERVICE = new Uri("https://ipv6.mesh.im/connectivity/check.aspx");
         DateTime _ipv6InternetStatusLastCheckedOn;
         InternetConnectivityStatus _ipv6InternetStatus = InternetConnectivityStatus.Identifying;
         IPAddress _ipv6LocalLiveIP;
@@ -233,6 +237,7 @@ namespace MeshCore.Network.Connections
             {
                 //if node type is tor then start tor in advance
                 _torController.Start();
+                _torController.AutoSwitchCircuit = true;
 
                 //start hidden service for incoming connections via tor
                 _torHiddenServiceInfo = _torController.CreateHiddenService(_localPort);
@@ -328,7 +333,10 @@ namespace MeshCore.Network.Connections
                         lock (_torController) //lock to prevent multiple start attempts
                         {
                             if (!_torController.IsRunning)
+                            {
                                 _torController.Start();
+                                _torController.AutoSwitchCircuit = true;
+                            }
                         }
                     }
 
@@ -391,8 +399,8 @@ namespace MeshCore.Network.Connections
 
                             IPEndPoint remotePeerEP = socket.RemoteEndPoint as IPEndPoint;
 
-                            if (NetUtilities.IsIPv4MappedIPv6Address(remotePeerEP.Address))
-                                remotePeerEP = new IPEndPoint(NetUtilities.ConvertFromIPv4MappedIPv6Address(remotePeerEP.Address), remotePeerEP.Port);
+                            if (remotePeerEP.Address.IsIPv4MappedToIPv6)
+                                remotePeerEP = new IPEndPoint(remotePeerEP.Address.MapToIPv4(), remotePeerEP.Port);
 
                             AcceptConnectionInitiateProtocol(s, remotePeerEP);
                         }
@@ -432,46 +440,37 @@ namespace MeshCore.Network.Connections
                 if (_localPeerId.Equals(remotePeerId))
                     return null;
 
+                Connection existingConnection = null;
+
                 //check for existing connection by connection id
                 if (_connectionListByEndPoint.ContainsKey(remotePeerEP))
                 {
-                    Connection existingConnection = _connectionListByEndPoint[remotePeerEP];
-
-                    //check for virtual vs real connection
-                    bool currentIsVirtual = Connection.IsStreamVirtualConnection(s);
-                    bool existingIsVirtual = existingConnection.IsVirtualConnection;
-
-                    if (existingIsVirtual && !currentIsVirtual)
-                    {
-                        //existing is virtual and current is real; remove existing connection
-                        existingConnection.Dispose();
-                    }
-                    else if (currentIsVirtual)
-                    {
-                        //existing is real/virtual and current is virtual; keep existing connection
-                        return null;
-                    }
+                    existingConnection = _connectionListByEndPoint[remotePeerEP];
                 }
                 else if (_connectionListByPeerId.ContainsKey(remotePeerId)) //check for existing connection by peer id
                 {
-                    Connection existingConnection = _connectionListByPeerId[remotePeerId];
+                    existingConnection = _connectionListByPeerId[remotePeerId];
+                }
 
+                if (existingConnection != null)
+                {
                     //check for virtual vs real connection
                     bool currentIsVirtual = Connection.IsStreamVirtualConnection(s);
                     bool existingIsVirtual = existingConnection.IsVirtualConnection;
 
-                    if (existingIsVirtual && !currentIsVirtual)
+                    if (currentIsVirtual)
+                    {
+                        //current is virtual; keep existing connection of any kind
+                        return null;
+                    }
+                    else if (existingIsVirtual)
                     {
                         //existing is virtual and current is real; remove existing connection
                         existingConnection.Dispose();
                     }
-                    else if (currentIsVirtual)
-                    {
-                        //existing is real/virtual and current is virtual; keep existing connection
-                        return null;
-                    }
                     else
                     {
+                        //current and existing both are real
                         //compare existing and new peer ip end-point
                         if (AllowNewConnection(existingConnection.RemotePeerEP, remotePeerEP))
                         {
@@ -677,8 +676,8 @@ namespace MeshCore.Network.Connections
             {
                 IPEndPoint ep = remotePeerEP as IPEndPoint;
 
-                if (NetUtilities.IsIPv4MappedIPv6Address(ep.Address))
-                    remotePeerEP = new IPEndPoint(NetUtilities.ConvertFromIPv4MappedIPv6Address(ep.Address), ep.Port);
+                if (ep.Address.IsIPv4MappedToIPv6)
+                    remotePeerEP = new IPEndPoint(ep.Address.MapToIPv4(), ep.Port);
             }
 
             //prevent multiple connection requests to same remote end-point
@@ -752,8 +751,8 @@ namespace MeshCore.Network.Connections
             {
                 IPEndPoint ep = remotePeerEP as IPEndPoint;
 
-                if (NetUtilities.IsIPv4MappedIPv6Address(ep.Address))
-                    remotePeerEP = new IPEndPoint(NetUtilities.ConvertFromIPv4MappedIPv6Address(ep.Address), ep.Port);
+                if (ep.Address.IsIPv4MappedToIPv6)
+                    remotePeerEP = new IPEndPoint(ep.Address.MapToIPv4(), ep.Port);
             }
 
             //prevent multiple virtual connection requests to same remote end-point
@@ -943,8 +942,8 @@ namespace MeshCore.Network.Connections
             {
                 IPEndPoint ep = remoteNodeEP as IPEndPoint;
 
-                if (NetUtilities.IsIPv4MappedIPv6Address(ep.Address))
-                    remoteNodeEP = new IPEndPoint(NetUtilities.ConvertFromIPv4MappedIPv6Address(ep.Address), ep.Port);
+                if (ep.Address.IsIPv4MappedToIPv6)
+                    remoteNodeEP = new IPEndPoint(ep.Address.MapToIPv4(), ep.Port);
             }
 
             NetworkStream nS = new NetworkStream(MakeTcpConnection(remoteNodeEP), true);
@@ -1055,16 +1054,17 @@ namespace MeshCore.Network.Connections
         {
             try
             {
-                int tcpRelayClientConnectionCount;
+                //ipv4 tcp relay
+                int ipv4TcpRelayClientConnectionCount;
 
-                lock (_tcpRelayClientConnections)
+                lock (_ipv4TcpRelayClientConnections)
                 {
-                    tcpRelayClientConnectionCount = _tcpRelayClientConnections.Count;
+                    ipv4TcpRelayClientConnectionCount = _ipv4TcpRelayClientConnections.Count;
                 }
 
-                if (tcpRelayClientConnectionCount < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
+                if (ipv4TcpRelayClientConnectionCount < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
                 {
-                    //find tcp relay connections via DHT
+                    //find ipv4 tcp relay connections via DHT
                     foreach (IPEndPoint nodeEP in _dhtManager.GetIPv4KRandomNodeEPs())
                     {
                         ThreadPool.QueueUserWorkItem(delegate (object state2)
@@ -1073,13 +1073,54 @@ namespace MeshCore.Network.Connections
                             {
                                 Connection tcpRelayClientConnection = MakeConnection(state2 as IPEndPoint);
 
-                                lock (_tcpRelayClientConnections)
+                                lock (_ipv4TcpRelayClientConnections)
                                 {
-                                    if (_tcpRelayClientConnections.Count < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
+                                    if (_ipv4TcpRelayClientConnections.Count < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
                                     {
-                                        if (!_tcpRelayClientConnections.Contains(tcpRelayClientConnection))
+                                        if (!_ipv4TcpRelayClientConnections.Contains(tcpRelayClientConnection))
                                         {
-                                            _tcpRelayClientConnections.Add(tcpRelayClientConnection);
+                                            _ipv4TcpRelayClientConnections.Add(tcpRelayClientConnection);
+                                            tcpRelayClientConnection.EnableTcpRelayClientMode();
+
+                                            Debug.Write(this.GetType().Name, "Tcp relay client connection added: " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.Write(this.GetType().Name, ex);
+                            }
+                        }, nodeEP);
+                    }
+                }
+
+                //ipv6 tcp relay
+                int ipv6TcpRelayClientConnectionCount;
+
+                lock (_ipv6TcpRelayClientConnections)
+                {
+                    ipv6TcpRelayClientConnectionCount = _ipv6TcpRelayClientConnections.Count;
+                }
+
+                if (ipv6TcpRelayClientConnectionCount < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
+                {
+                    //find ipv6 tcp relay connections via DHT
+                    foreach (IPEndPoint nodeEP in _dhtManager.GetIPv6KRandomNodeEPs())
+                    {
+                        ThreadPool.QueueUserWorkItem(delegate (object state2)
+                        {
+                            try
+                            {
+                                Connection tcpRelayClientConnection = MakeConnection(state2 as IPEndPoint);
+
+                                lock (_ipv6TcpRelayClientConnections)
+                                {
+                                    if (_ipv6TcpRelayClientConnections.Count < MAX_TCP_RELAY_CLIENT_CONNECTIONS)
+                                    {
+                                        if (!_ipv6TcpRelayClientConnections.Contains(tcpRelayClientConnection))
+                                        {
+                                            _ipv6TcpRelayClientConnections.Add(tcpRelayClientConnection);
                                             tcpRelayClientConnection.EnableTcpRelayClientMode();
 
                                             Debug.Write(this.GetType().Name, "Tcp relay client connection added: " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
@@ -1103,9 +1144,26 @@ namespace MeshCore.Network.Connections
 
         public void TcpRelayClientRegisterHostedNetwork(BinaryNumber networkId)
         {
-            lock (_tcpRelayClientConnections)
+            lock (_ipv4TcpRelayClientConnections)
             {
-                foreach (Connection tcpRelayClientConnection in _tcpRelayClientConnections)
+                foreach (Connection tcpRelayClientConnection in _ipv4TcpRelayClientConnections)
+                {
+                    try
+                    {
+                        tcpRelayClientConnection.TcpRelayRegisterHostedNetwork(networkId);
+
+                        Debug.Write(this.GetType().Name, "Tcp relay client registered hosted network [" + networkId + "] on " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
+                }
+            }
+
+            lock (_ipv6TcpRelayClientConnections)
+            {
+                foreach (Connection tcpRelayClientConnection in _ipv6TcpRelayClientConnections)
                 {
                     try
                     {
@@ -1123,9 +1181,26 @@ namespace MeshCore.Network.Connections
 
         public void TcpRelayClientUnregisterHostedNetwork(BinaryNumber networkId)
         {
-            lock (_tcpRelayClientConnections)
+            lock (_ipv4TcpRelayClientConnections)
             {
-                foreach (Connection tcpRelayClientConnection in _tcpRelayClientConnections)
+                foreach (Connection tcpRelayClientConnection in _ipv4TcpRelayClientConnections)
+                {
+                    try
+                    {
+                        tcpRelayClientConnection.TcpRelayUnregisterHostedNetwork(networkId);
+
+                        Debug.Write(this.GetType().Name, "Tcp relay client unregistered hosted network [" + networkId + "] on " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.Write(this.GetType().Name, ex);
+                    }
+                }
+            }
+
+            lock (_ipv6TcpRelayClientConnections)
+            {
+                foreach (Connection tcpRelayClientConnection in _ipv6TcpRelayClientConnections)
                 {
                     try
                     {
@@ -1143,22 +1218,41 @@ namespace MeshCore.Network.Connections
 
         private void TcpRelayClientRemoveRelayConnection(Connection connection)
         {
-            lock (_tcpRelayClientConnections)
+            lock (_ipv4TcpRelayClientConnections)
             {
-                _tcpRelayClientConnections.Remove(connection);
+                _ipv4TcpRelayClientConnections.Remove(connection);
+            }
+
+            lock (_ipv6TcpRelayClientConnections)
+            {
+                _ipv6TcpRelayClientConnections.Remove(connection);
             }
 
             Debug.Write(this.GetType().Name, "Tcp relay client connection removed: " + connection.RemotePeerId + " [" + connection.RemotePeerEP + "]");
         }
 
-        public EndPoint[] GetTcpRelayConnectionEndPoints()
+        public EndPoint[] GetIPv4TcpRelayConnectionEndPoints()
         {
-            lock (_tcpRelayClientConnections)
+            lock (_ipv4TcpRelayClientConnections)
             {
-                EndPoint[] tcpRelayNodes = new EndPoint[_tcpRelayClientConnections.Count];
+                EndPoint[] tcpRelayNodes = new EndPoint[_ipv4TcpRelayClientConnections.Count];
                 int i = 0;
 
-                foreach (Connection connection in _tcpRelayClientConnections)
+                foreach (Connection connection in _ipv4TcpRelayClientConnections)
+                    tcpRelayNodes[i++] = connection.RemotePeerEP;
+
+                return tcpRelayNodes;
+            }
+        }
+
+        public EndPoint[] GetIPv6TcpRelayConnectionEndPoints()
+        {
+            lock (_ipv6TcpRelayClientConnections)
+            {
+                EndPoint[] tcpRelayNodes = new EndPoint[_ipv6TcpRelayClientConnections.Count];
+                int i = 0;
+
+                foreach (Connection connection in _ipv6TcpRelayClientConnections)
                     tcpRelayNodes[i++] = connection.RemotePeerEP;
 
                 return tcpRelayNodes;
@@ -1196,6 +1290,13 @@ namespace MeshCore.Network.Connections
 
             try
             {
+                if (_node.Type == MeshNodeType.Tor)
+                {
+                    newInternetStatus = InternetConnectivityStatus.TorInternetConnection;
+                    newUPnPDeviceStatus = UPnPDeviceStatus.Disabled;
+                    return;
+                }
+
                 if (_node.Proxy != null)
                 {
                     switch (_node.Proxy.Type)
@@ -1340,13 +1441,24 @@ namespace MeshCore.Network.Connections
                                 _ipv4ConnectivityCheckExternalEP = null;
                                 break;
 
+                            case InternetConnectivityStatus.TorInternetConnection:
+                                if (!_torProxy.IsProxyAvailable())
+                                    newInternetStatus = InternetConnectivityStatus.TorInternetConnectionFailed;
+                                else if (!WebUtilities.IsWebAccessible(null, _torProxy, WebClientExNetworkType.IPv4Only, 10000, false))
+                                    newInternetStatus = InternetConnectivityStatus.NoTorInternetConnection;
+
+                                _ipv4LocalLiveIP = null;
+                                _upnpExternalIP = null;
+                                _ipv4ConnectivityCheckExternalEP = null;
+                                break;
+
                             default:
                                 if (WebUtilities.IsWebAccessible(null, null, WebClientExNetworkType.IPv4Only, 10000, false))
                                 {
                                     switch (newInternetStatus)
                                     {
                                         case InternetConnectivityStatus.DirectInternetConnection:
-                                            if (!IPv4DoWebCheckIncomingConnection(_localPort))
+                                            if (!CanAcceptIncomingConnection(_localPort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP))
                                             {
                                                 newInternetStatus = InternetConnectivityStatus.NatOrFirewalledInternetConnection;
                                                 _ipv4LocalLiveIP = null;
@@ -1354,9 +1466,7 @@ namespace MeshCore.Network.Connections
                                             break;
 
                                         case InternetConnectivityStatus.NatOrFirewalledInternetConnection:
-                                            if (!IPv4DoWebCheckIncomingConnection(_localPort))
-                                                _ipv4ConnectivityCheckExternalEP = null;
-
+                                            CanAcceptIncomingConnection(_localPort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP);
                                             break;
 
                                         case InternetConnectivityStatus.NatInternetConnectionViaUPnPRouter:
@@ -1388,7 +1498,7 @@ namespace MeshCore.Network.Connections
                             //connectivity check can still be done if user manually calls ReCheckConnectivity()
                             newUPnPDeviceStatus = UPnPDeviceStatus.PortForwardedNotAccessible;
                         }
-                        else if (!IPv4DoWebCheckIncomingConnection(_localPort))
+                        else if (!CanAcceptIncomingConnection(_localPort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP))
                         {
                             newUPnPDeviceStatus = UPnPDeviceStatus.PortForwardedNotAccessible;
                         }
@@ -1419,6 +1529,12 @@ namespace MeshCore.Network.Connections
 
             try
             {
+                if (_node.Type == MeshNodeType.Tor)
+                {
+                    newInternetStatus = InternetConnectivityStatus.TorInternetConnection;
+                    return;
+                }
+
                 if (_node.Proxy != null)
                 {
                     switch (_node.Proxy.Type)
@@ -1488,10 +1604,21 @@ namespace MeshCore.Network.Connections
                                 _ipv6ConnectivityCheckExternalEP = null;
                                 break;
 
+                            case InternetConnectivityStatus.TorInternetConnection:
+                                if (!_torProxy.IsProxyAvailable())
+                                    newInternetStatus = InternetConnectivityStatus.TorInternetConnectionFailed;
+                                else if (!WebUtilities.IsWebAccessible(null, _torProxy, WebClientExNetworkType.IPv6Only, 10000, false))
+                                    newInternetStatus = InternetConnectivityStatus.NoTorInternetConnection;
+
+                                _ipv4LocalLiveIP = null;
+                                _upnpExternalIP = null;
+                                _ipv4ConnectivityCheckExternalEP = null;
+                                break;
+
                             default:
                                 if (WebUtilities.IsWebAccessible(null, null, WebClientExNetworkType.IPv6Only, 10000, false))
                                 {
-                                    if (!IPv6DoWebCheckIncomingConnection(_localPort))
+                                    if (!CanAcceptIncomingConnection(_localPort, WebClientExNetworkType.IPv6Only, IPv6_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv6ConnectivityCheckExternalEP))
                                     {
                                         newInternetStatus = InternetConnectivityStatus.FirewalledInternetConnection;
                                         _ipv6LocalLiveIP = null;
@@ -1517,7 +1644,7 @@ namespace MeshCore.Network.Connections
             }
         }
 
-        private bool IPv4DoWebCheckIncomingConnection(int externalPort)
+        private bool CanAcceptIncomingConnection(int externalPort, WebClientExNetworkType type, Uri webServiceUrl, ref EndPoint externalEP)
         {
             bool webCheckError = false;
             bool webCheckSuccess = false;
@@ -1526,13 +1653,13 @@ namespace MeshCore.Network.Connections
             {
                 using (WebClientEx client = new WebClientEx())
                 {
-                    client.NetworkType = WebClientExNetworkType.IPv4Only;
+                    client.NetworkType = type;
                     client.Proxy = _node.Proxy;
                     client.QueryString.Add("port", externalPort.ToString());
                     client.QueryString.Add("ts", DateTime.UtcNow.ToBinary().ToString());
                     client.Timeout = 20000;
 
-                    using (BinaryReader bR = new BinaryReader(client.OpenRead(IPv4_CONNECTIVITY_CHECK_WEB_SERVICE)))
+                    using (BinaryReader bR = new BinaryReader(client.OpenRead(webServiceUrl)))
                     {
                         switch (bR.ReadByte()) //version
                         {
@@ -1541,9 +1668,9 @@ namespace MeshCore.Network.Connections
                                 EndPoint selfEP = EndPointExtension.Parse(bR); //self end-point
 
                                 if (webCheckSuccess)
-                                    _ipv4ConnectivityCheckExternalEP = selfEP;
+                                    externalEP = selfEP;
                                 else
-                                    _ipv4ConnectivityCheckExternalEP = null;
+                                    externalEP = null;
 
                                 //read peers
                                 int count = bR.ReadByte();
@@ -1564,60 +1691,7 @@ namespace MeshCore.Network.Connections
 
                 webCheckError = true;
                 webCheckSuccess = false;
-                _ipv4ConnectivityCheckExternalEP = null;
-            }
-
-            return webCheckSuccess || webCheckError;
-        }
-
-        private bool IPv6DoWebCheckIncomingConnection(int externalPort)
-        {
-            bool webCheckError = false;
-            bool webCheckSuccess = false;
-
-            try
-            {
-                using (WebClientEx client = new WebClientEx())
-                {
-                    client.NetworkType = WebClientExNetworkType.IPv6Only;
-                    client.Proxy = _node.Proxy;
-                    client.QueryString.Add("port", externalPort.ToString());
-                    client.QueryString.Add("ts", DateTime.UtcNow.ToBinary().ToString());
-                    client.Timeout = 20000;
-
-                    using (BinaryReader bR = new BinaryReader(client.OpenRead(IPv6_CONNECTIVITY_CHECK_WEB_SERVICE)))
-                    {
-                        switch (bR.ReadByte()) //version
-                        {
-                            case 1:
-                                webCheckSuccess = bR.ReadBoolean(); //test status
-                                EndPoint selfEP = EndPointExtension.Parse(bR); //self end-point
-
-                                if (webCheckSuccess)
-                                    _ipv6ConnectivityCheckExternalEP = selfEP;
-                                else
-                                    _ipv6ConnectivityCheckExternalEP = null;
-
-                                //read peers
-                                int count = bR.ReadByte();
-                                for (int i = 0; i < count; i++)
-                                    _dhtManager.AddNode(EndPointExtension.Parse(bR));
-
-                                break;
-
-                            default:
-                                throw new NotSupportedException("Connectivity web service response version not supported.");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Write(this.GetType().Name, ex);
-
-                webCheckError = true;
-                webCheckSuccess = false;
-                _ipv6ConnectivityCheckExternalEP = null;
+                externalEP = null;
             }
 
             return webCheckSuccess || webCheckError;
@@ -1654,14 +1728,14 @@ namespace MeshCore.Network.Connections
         public bool TorRunning
         { get { return _torController.IsRunning; } }
 
-        public string TorHiddenServiceAddress
+        public EndPoint TorHiddenEndPoint
         {
             get
             {
                 if (_torController.IsRunning && (_torHiddenServiceInfo != null))
-                    return _torHiddenServiceInfo.ServiceId + ".onion";
+                    return new DomainEndPoint(_torHiddenServiceInfo.ServiceId + ".onion", _localPort);
 
-                return "";
+                return null;
             }
         }
 
