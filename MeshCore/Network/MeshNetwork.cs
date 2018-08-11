@@ -126,7 +126,8 @@ namespace MeshCore.Network
         DateTime _dhtLastUpdated;
 
         //tcp relay
-        readonly List<EndPoint> _tcpRelayPeers = new List<EndPoint>();
+        readonly List<EndPoint> _ipv4TcpRelayPeers = new List<EndPoint>();
+        readonly List<EndPoint> _ipv6TcpRelayPeers = new List<EndPoint>();
 
         //ping keep-alive timer
         const int PING_TIMER_INTERVAL = 15000;
@@ -609,14 +610,28 @@ namespace MeshCore.Network
         {
             Debug.Write(this.GetType().Name, "Tcp relay received network [" + _networkId + "] peers via " + viaConnection.RemotePeerId + " [" + viaConnection.RemotePeerEP + "]");
 
-            lock (_tcpRelayPeers)
+            lock (_ipv4TcpRelayPeers)
             {
-                foreach (EndPoint peerEP in peerEPs)
+                lock (_ipv6TcpRelayPeers)
                 {
-                    if (!_tcpRelayPeers.Contains(peerEP))
-                        _tcpRelayPeers.Add(peerEP);
+                    foreach (EndPoint peerEP in peerEPs)
+                    {
+                        switch (peerEP.AddressFamily)
+                        {
+                            case AddressFamily.InterNetwork:
+                                if (!_ipv4TcpRelayPeers.Contains(peerEP))
+                                    _ipv4TcpRelayPeers.Add(peerEP);
+                                break;
 
-                    BeginMakeVirtualConnection(peerEP, viaConnection);
+                            case AddressFamily.InterNetworkV6:
+                                if (!_ipv6TcpRelayPeers.Contains(peerEP))
+                                    _ipv6TcpRelayPeers.Add(peerEP);
+                                break;
+                        }
+
+
+                        BeginMakeVirtualConnection(peerEP, viaConnection);
+                    }
                 }
             }
         }
@@ -1249,6 +1264,16 @@ namespace MeshCore.Network
 
                     if (!_localNetworkOnly)
                     {
+                        lock (_ipv4TcpRelayPeers)
+                        {
+                            _ipv4TcpRelayPeers.Clear();
+                        }
+
+                        lock (_ipv6TcpRelayPeers)
+                        {
+                            _ipv6TcpRelayPeers.Clear();
+                        }
+
                         //unregister network from tcp relays
                         _connectionManager.TcpRelayClientUnregisterHostedNetwork(_networkId);
                     }
@@ -1422,19 +1447,35 @@ namespace MeshCore.Network
             return _dhtLastUpdated.AddMilliseconds(DHT_ANNOUNCE_TIMER_INTERVAL) - DateTime.UtcNow;
         }
 
-        public int TcpRelayGetTotalPeers()
+        public int TcpRelayGetTotalIPv4Peers()
         {
-            lock (_tcpRelayPeers)
+            lock (_ipv4TcpRelayPeers)
             {
-                return _tcpRelayPeers.Count;
+                return _ipv4TcpRelayPeers.Count;
             }
         }
 
-        public EndPoint[] TcpRelayGetPeers()
+        public EndPoint[] TcpRelayGetIPv4Peers()
         {
-            lock (_tcpRelayPeers)
+            lock (_ipv4TcpRelayPeers)
             {
-                return _tcpRelayPeers.ToArray();
+                return _ipv4TcpRelayPeers.ToArray();
+            }
+        }
+
+        public int TcpRelayGetTotalIPv6Peers()
+        {
+            lock (_ipv6TcpRelayPeers)
+            {
+                return _ipv6TcpRelayPeers.Count;
+            }
+        }
+
+        public EndPoint[] TcpRelayGetIPv6Peers()
+        {
+            lock (_ipv6TcpRelayPeers)
+            {
+                return _ipv6TcpRelayPeers.ToArray();
             }
         }
 
@@ -1621,14 +1662,30 @@ namespace MeshCore.Network
                 _localNetworkOnlyDateModified = DateTime.UtcNow;
                 _localNetworkOnly = value;
 
-                lock (_dhtIPv4Peers)
+                if (_localNetworkOnly)
                 {
-                    _dhtIPv4Peers.Clear();
-                }
+                    lock (_dhtIPv4Peers)
+                    {
+                        _dhtIPv4Peers.Clear();
+                    }
 
-                lock (_dhtIPv6Peers)
-                {
-                    _dhtIPv6Peers.Clear();
+                    lock (_dhtIPv6Peers)
+                    {
+                        _dhtIPv6Peers.Clear();
+                    }
+
+                    lock (_ipv4TcpRelayPeers)
+                    {
+                        _ipv4TcpRelayPeers.Clear();
+                    }
+
+                    lock (_ipv6TcpRelayPeers)
+                    {
+                        _ipv6TcpRelayPeers.Clear();
+                    }
+
+                    //unregister from tcp relay
+                    _connectionManager.TcpRelayClientUnregisterHostedNetwork(_networkId);
                 }
 
                 //notify UI
@@ -2608,6 +2665,32 @@ namespace MeshCore.Network
                                             if (_peer._network._localNetworkOnly != localOnly.LocalNetworkOnly)
                                             {
                                                 _peer._network._localNetworkOnly = localOnly.LocalNetworkOnly;
+
+                                                if (_peer._network._localNetworkOnly)
+                                                {
+                                                    lock (_peer._network._dhtIPv4Peers)
+                                                    {
+                                                        _peer._network._dhtIPv4Peers.Clear();
+                                                    }
+
+                                                    lock (_peer._network._dhtIPv6Peers)
+                                                    {
+                                                        _peer._network._dhtIPv6Peers.Clear();
+                                                    }
+
+                                                    lock (_peer._network._ipv4TcpRelayPeers)
+                                                    {
+                                                        _peer._network._ipv4TcpRelayPeers.Clear();
+                                                    }
+
+                                                    lock (_peer._network._ipv6TcpRelayPeers)
+                                                    {
+                                                        _peer._network._ipv6TcpRelayPeers.Clear();
+                                                    }
+
+                                                    //unregister from tcp relay
+                                                    _peer._network._connectionManager.TcpRelayClientUnregisterHostedNetwork(_peer._network._networkId);
+                                                }
 
                                                 string infoText;
 
