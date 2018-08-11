@@ -595,9 +595,14 @@ namespace MeshCore
             return _connectionManager.DhtManager.GetLanDhtNodes();
         }
 
-        public EndPoint[] GetTcpRelayNodes()
+        public EndPoint[] GetIPv4TcpRelayNodes()
         {
-            return _connectionManager.GetTcpRelayConnectionEndPoints();
+            return _connectionManager.GetIPv4TcpRelayConnectionEndPoints();
+        }
+
+        public EndPoint[] GetIPv6TcpRelayNodes()
+        {
+            return _connectionManager.GetIPv6TcpRelayConnectionEndPoints();
         }
 
         public void WriteTo(BinaryWriter bW)
@@ -878,8 +883,8 @@ namespace MeshCore
         public bool TorRunning
         { get { return _connectionManager.TorRunning; } }
 
-        public string TorHiddenServiceAddress
-        { get { return _connectionManager.TorHiddenServiceAddress; } }
+        public EndPoint TorHiddenEndPoint
+        { get { return _connectionManager.TorHiddenEndPoint; } }
 
         public UPnPDeviceStatus UPnPStatus
         { get { return _connectionManager.UPnPStatus; } }
