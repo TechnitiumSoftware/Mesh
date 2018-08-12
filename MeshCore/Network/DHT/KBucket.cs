@@ -392,7 +392,7 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        public NodeContact[] GetKClosestContacts(BinaryNumber nodeID)
+        public NodeContact[] GetKClosestContacts(BinaryNumber nodeID, bool includeSelfContact)
         {
             KBucket currentBucket = this;
 
@@ -411,7 +411,7 @@ namespace MeshCore.Network.DHT
 
                     if (closestBucket._contactCount >= DhtNode.KADEMLIA_K)
                     {
-                        closestContacts = closestBucket.GetAllContacts(false);
+                        closestContacts = closestBucket.GetAllContacts(false, includeSelfContact);
 
                         if (closestContacts.Length > DhtNode.KADEMLIA_K)
                             return SelectClosestContacts(closestContacts, nodeID, DhtNode.KADEMLIA_K);
@@ -427,7 +427,7 @@ namespace MeshCore.Network.DHT
                     {
                         KBucket parentBucket = closestBucket._parentBucket;
 
-                        closestContacts = parentBucket.GetAllContacts(false);
+                        closestContacts = parentBucket.GetAllContacts(false, includeSelfContact);
 
                         if (closestContacts.Length > DhtNode.KADEMLIA_K)
                             return SelectClosestContacts(closestContacts, nodeID, DhtNode.KADEMLIA_K);
@@ -439,7 +439,7 @@ namespace MeshCore.Network.DHT
                     }
 
                     if (closestContacts == null)
-                        closestContacts = closestBucket.GetAllContacts(false);
+                        closestContacts = closestBucket.GetAllContacts(false, includeSelfContact);
 
                     return closestContacts;
 
@@ -453,7 +453,7 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        public NodeContact[] GetAllContacts(bool includeStaleContacts)
+        public NodeContact[] GetAllContacts(bool includeStaleContacts, bool includeSelfContact)
         {
             List<NodeContact> allContacts = new List<NodeContact>();
             List<KBucket> allLeafKBuckets = GetAllLeafKBuckets();
@@ -468,6 +468,9 @@ namespace MeshCore.Network.DHT
                     {
                         if (contact != null)
                         {
+                            if (!includeSelfContact && contact.IsCurrentNode)
+                                continue;
+
                             if (includeStaleContacts || !contact.IsStale())
                                 allContacts.Add(contact);
                         }
@@ -553,7 +556,7 @@ namespace MeshCore.Network.DHT
                                 randomNodeID = (randomNodeID >> kBucket._bucketDepth) | kBucket._bucketID;
 
                             //find closest contacts for current node id
-                            NodeContact[] initialContacts = kBucket.GetKClosestContacts(randomNodeID);
+                            NodeContact[] initialContacts = kBucket.GetKClosestContacts(randomNodeID, true);
 
                             if (initialContacts.Length > 0)
                                 dhtNode.QueryFindNode(initialContacts, randomNodeID);
