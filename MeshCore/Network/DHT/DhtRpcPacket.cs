@@ -20,7 +20,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 using System;
 using System.IO;
 using System.Net;
-using System.Net.Sockets;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 
@@ -146,9 +145,9 @@ namespace MeshCore.Network.DHT
             return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.FIND_PEERS, networkId, contacts, peers);
         }
 
-        public static DhtRpcPacket CreateAnnouncePeerPacketQuery(NodeContact sourceNode, BinaryNumber networkId, EndPoint peer)
+        public static DhtRpcPacket CreateAnnouncePeerPacketQuery(NodeContact sourceNode, BinaryNumber networkId, EndPoint serviceEP)
         {
-            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.ANNOUNCE_PEER, networkId, null, new EndPoint[] { peer });
+            return new DhtRpcPacket(sourceNode.NodeEP, DhtRpcType.ANNOUNCE_PEER, networkId, null, new EndPoint[] { serviceEP });
         }
 
         public static DhtRpcPacket CreateAnnouncePeerPacketResponse(NodeContact sourceNode, BinaryNumber networkId, EndPoint[] peers)
@@ -234,21 +233,10 @@ namespace MeshCore.Network.DHT
         public EndPoint SourceNodeEP
         { get { return _sourceNodeEP; } }
 
-        public ushort SourceNodePort
-        {
-            get
-            {
-                if (_sourceNodeEP.AddressFamily == AddressFamily.Unspecified)
-                    return Convert.ToUInt16((_sourceNodeEP as DomainEndPoint).Port);
-
-                return Convert.ToUInt16((_sourceNodeEP as IPEndPoint).Port);
-            }
-        }
-
         public DhtRpcType Type
         { get { return _type; } }
 
-        public BinaryNumber NetworkID
+        public BinaryNumber NetworkId
         { get { return _networkId; } }
 
         public NodeContact[] Contacts
