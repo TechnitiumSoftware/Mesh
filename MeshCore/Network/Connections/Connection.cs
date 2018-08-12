@@ -46,9 +46,9 @@ namespace MeshCore.Network.Connections
         ConnectChannelTunnel = 6,
         ConnectChannelVirtualConnection = 7,
 
-        TcpRelayRegisterHostedNetwork = 8,
-        TcpRelayUnregisterHostedNetwork = 9,
-        TcpRelayReceivedNetworkPeers = 10
+        TcpRelayServerRegisterHostedNetwork = 8,
+        TcpRelayServerUnregisterHostedNetwork = 9,
+        MeshNetworkPeers = 10
     }
 
     public class Connection : IDisposable
@@ -260,7 +260,7 @@ namespace MeshCore.Network.Connections
 
                                     byte[] data = mS.ToArray();
 
-                                    WriteFrame(ConnectionSignal.TcpRelayReceivedNetworkPeers, channelId, data, 0, data.Length);
+                                    WriteFrame(ConnectionSignal.MeshNetworkPeers, channelId, data, 0, data.Length);
                                 }
                             }
 
@@ -425,8 +425,8 @@ namespace MeshCore.Network.Connections
                             #endregion
                             break;
 
-                        case ConnectionSignal.TcpRelayRegisterHostedNetwork:
-                            #region TcpRelayRegisterHostedNetwork
+                        case ConnectionSignal.TcpRelayServerRegisterHostedNetwork:
+                            #region TcpRelayServerRegisterHostedNetwork
 
                             _connectionManager.TcpRelayServerRegisterHostedNetwork(this, channelId.Clone());
 
@@ -435,16 +435,16 @@ namespace MeshCore.Network.Connections
                             #endregion
                             break;
 
-                        case ConnectionSignal.TcpRelayUnregisterHostedNetwork:
-                            #region TcpRelayUnregisterHostedNetwork
+                        case ConnectionSignal.TcpRelayServerUnregisterHostedNetwork:
+                            #region TcpRelayServerUnregisterHostedNetwork
 
                             _connectionManager.TcpRelayServerUnregisterHostedNetwork(this, channelId);
 
                             #endregion
                             break;
 
-                        case ConnectionSignal.TcpRelayReceivedNetworkPeers:
-                            #region TcpRelayNetworkPeers
+                        case ConnectionSignal.MeshNetworkPeers:
+                            #region MeshNetworkPeers
                             {
                                 BinaryReader bR = new BinaryReader(dataStream);
 
@@ -598,12 +598,12 @@ namespace MeshCore.Network.Connections
 
         public void TcpRelayRegisterHostedNetwork(BinaryNumber networkId)
         {
-            WriteFrame(ConnectionSignal.TcpRelayRegisterHostedNetwork, networkId, null, 0, 0);
+            WriteFrame(ConnectionSignal.TcpRelayServerRegisterHostedNetwork, networkId, null, 0, 0);
         }
 
         public void TcpRelayUnregisterHostedNetwork(BinaryNumber networkId)
         {
-            WriteFrame(ConnectionSignal.TcpRelayUnregisterHostedNetwork, networkId, null, 0, 0);
+            WriteFrame(ConnectionSignal.TcpRelayServerUnregisterHostedNetwork, networkId, null, 0, 0);
         }
 
         #endregion
