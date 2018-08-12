@@ -91,9 +91,9 @@ namespace MeshCore
         EndPoint[] _ipv6BootstrapDhtNodes = new EndPoint[] { }; //serialize
         EndPoint[] _torBootstrapDhtNodes = new EndPoint[] { }; //serialize
 
-        bool _enableUPnP = true; //serialize
-        bool _allowInboundInvitations = true; //serialize
-        bool _allowOnlyLocalInboundInvitations = false; //serialize; this option works only when _allowInboundInvitations=true
+        bool _enableUPnP; //serialize
+        bool _allowInboundInvitations; //serialize
+        bool _allowOnlyLocalInboundInvitations; //serialize; this option works only when _allowInboundInvitations=true
 
         //proxy
         NetProxy _proxy;
@@ -132,6 +132,19 @@ namespace MeshCore
             _localServicePort = localPort;
             _profileDateModified = DateTime.UtcNow;
             _profileDisplayName = profileDisplayName;
+
+            if (_type == MeshNodeType.Tor)
+            {
+                _enableUPnP = false;
+                _allowInboundInvitations = true;
+                _allowOnlyLocalInboundInvitations = true;
+            }
+            else
+            {
+                _enableUPnP = true;
+                _allowInboundInvitations = true;
+                _allowOnlyLocalInboundInvitations = false;
+            }
 
             _profileFolder = profileFolder;
             _downloadFolder = downloadFolder;
@@ -184,13 +197,6 @@ namespace MeshCore
                 default:
                     throw new InvalidDataException("MeshNode format version not supported.");
             }
-        }
-
-        public MeshNode(BinaryReader bR, string profileFolder, TorController torController)
-        {
-            _profileFolder = profileFolder;
-
-            InitMeshNode(bR, torController);
         }
 
         #endregion
@@ -259,7 +265,7 @@ namespace MeshCore
                     _maskedUserId = maskedUserId;
                 }
 
-                _connectionManager.DhtManager.BeginAnnounce(maskedUserId, _allowOnlyLocalInboundInvitations, null);
+                _connectionManager.DhtManager.AnnounceAsync(maskedUserId, _allowOnlyLocalInboundInvitations, null);
 
                 if (!_allowOnlyLocalInboundInvitations)
                     _connectionManager.TcpRelayClientRegisterHostedNetwork(_maskedUserId);
@@ -539,6 +545,9 @@ namespace MeshCore
 
         public void ConfigureProxy(NetProxyType proxyType, string proxyAddress, ushort proxyPort, NetworkCredential proxyCredentials)
         {
+            if (_type == MeshNodeType.Tor)
+                throw new NotSupportedException("Mesh tor profile does not support proxy configuration.");
+
             if (proxyType == NetProxyType.None)
                 _proxy = null;
             else
@@ -554,6 +563,9 @@ namespace MeshCore
 
         public void DisableProxy()
         {
+            if (_type == MeshNodeType.Tor)
+                throw new NotSupportedException("Mesh tor profile does not support proxy configuration.");
+
             if (_proxy != null)
             {
                 _proxy = null;
@@ -836,7 +848,15 @@ namespace MeshCore
         }
 
         public NetProxy Proxy
-        { get { return _proxy; } }
+        {
+            get
+            {
+                if (_type == MeshNodeType.Tor)
+                    return null;
+
+                return _proxy;
+            }
+        }
 
         public byte[] AppData
         {
