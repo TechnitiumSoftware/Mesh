@@ -31,6 +31,7 @@ using System.Threading;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 using TechnitiumLibrary.Net.Proxy;
+using TechnitiumLibrary.Net.Tor;
 
 namespace MeshCore
 {
@@ -67,7 +68,6 @@ namespace MeshCore
 
         string _password;
         readonly string _profileFolder;
-        readonly string _torExecutableFilePath;
 
         MeshNodeType _type; //serialize
         byte[] _privateKey; //serialize
@@ -76,7 +76,7 @@ namespace MeshCore
         BinaryNumber _userId; //serialize
         BinaryNumber _maskedUserId;
 
-        ushort _localPort; //serialize
+        ushort _localServicePort; //serialize
         string _downloadFolder; //serialize
 
         DateTime _profileDateModified; //serialize
@@ -124,32 +124,30 @@ namespace MeshCore
             }
         }
 
-        public MeshNode(MeshNodeType type, byte[] privateKey, SecureChannelCipherSuite supportedCiphers, ushort localPort, string profileDisplayName, string profileFolder, string downloadFolder, string torExecutableFilePath)
+        public MeshNode(MeshNodeType type, byte[] privateKey, SecureChannelCipherSuite supportedCiphers, ushort localPort, string profileDisplayName, string profileFolder, string downloadFolder, TorController torController)
         {
             _type = type;
             _privateKey = privateKey;
             _supportedCiphers = supportedCiphers;
-            _localPort = localPort;
+            _localServicePort = localPort;
             _profileDateModified = DateTime.UtcNow;
             _profileDisplayName = profileDisplayName;
 
             _profileFolder = profileFolder;
             _downloadFolder = downloadFolder;
-            _torExecutableFilePath = torExecutableFilePath;
 
             GenerateNewUserId();
 
             //start connection manager
-            _connectionManager = new ConnectionManager(this);
+            _connectionManager = new ConnectionManager(this, torController);
 
             InitAnnounceTimer();
         }
 
-        public MeshNode(Stream s, string password, string profileFolder, string torExecutableFile)
+        public MeshNode(Stream s, string password, string profileFolder, TorController torController)
         {
             _password = password;
             _profileFolder = profileFolder;
-            _torExecutableFilePath = torExecutableFile;
 
             switch (s.ReadByte()) //version
             {
@@ -177,7 +175,7 @@ namespace MeshCore
                     s.Position = cipherTextStartPosition;
                     CryptoStream cS = new CryptoStream(s, decryptionAlgo.CreateDecryptor(), CryptoStreamMode.Read);
 
-                    InitMeshNode(new BinaryReader(cS));
+                    InitMeshNode(new BinaryReader(cS), torController);
                     break;
 
                 case -1:
@@ -188,12 +186,11 @@ namespace MeshCore
             }
         }
 
-        public MeshNode(BinaryReader bR, string profileFolder, string torExecutableFile)
+        public MeshNode(BinaryReader bR, string profileFolder, TorController torController)
         {
             _profileFolder = profileFolder;
-            _torExecutableFilePath = torExecutableFile;
 
-            InitMeshNode(bR);
+            InitMeshNode(bR, torController);
         }
 
         #endregion
@@ -262,7 +259,7 @@ namespace MeshCore
                     _maskedUserId = maskedUserId;
                 }
 
-                _connectionManager.DhtManager.BeginAnnounce(maskedUserId, _allowOnlyLocalInboundInvitations, new IPEndPoint(IPAddress.Any, _connectionManager.LocalPort), null);
+                _connectionManager.DhtManager.BeginAnnounce(maskedUserId, _allowOnlyLocalInboundInvitations, null);
 
                 if (!_allowOnlyLocalInboundInvitations)
                     _connectionManager.TcpRelayClientRegisterHostedNetwork(_maskedUserId);
@@ -272,7 +269,7 @@ namespace MeshCore
                 _userIdAnnounceTimer.Change(5000, USER_ID_ANNOUNCE_INTERVAL);
         }
 
-        private void InitMeshNode(BinaryReader bR)
+        private void InitMeshNode(BinaryReader bR, TorController torController)
         {
             switch (bR.ReadByte()) //version
             {
@@ -285,7 +282,7 @@ namespace MeshCore
                     _userId = new BinaryNumber(bR.BaseStream);
 
                     //
-                    _localPort = bR.ReadUInt16();
+                    _localServicePort = bR.ReadUInt16();
                     _downloadFolder = bR.ReadShortString();
 
                     //
@@ -324,7 +321,7 @@ namespace MeshCore
                     _appData = bR.ReadBuffer();
 
                     //start connection manager
-                    _connectionManager = new ConnectionManager(this);
+                    _connectionManager = new ConnectionManager(this, torController);
 
                     //
                     int networkCount = bR.ReadInt32();
@@ -618,7 +615,7 @@ namespace MeshCore
             _userId.WriteTo(bW.BaseStream);
 
             //
-            bW.Write(_localPort);
+            bW.Write(_localServicePort);
             bW.WriteShortString(_downloadFolder);
 
             //
@@ -746,9 +743,6 @@ namespace MeshCore
         public string ProfileFolder
         { get { return _profileFolder; } }
 
-        public string TorExecutableFile
-        { get { return _torExecutableFilePath; } }
-
         public MeshNodeType Type
         { get { return _type; } }
 
@@ -761,10 +755,10 @@ namespace MeshCore
         public SecureChannelCipherSuite SupportedCiphers
         { get { return _supportedCiphers; } }
 
-        public ushort LocalPort
+        public ushort LocalServicePort
         {
-            get { return _localPort; }
-            set { _localPort = value; }
+            get { return _localServicePort; }
+            set { _localServicePort = value; }
         }
 
         public string DownloadFolder
@@ -850,8 +844,8 @@ namespace MeshCore
             set { _appData = value; }
         }
 
-        public int ActiveLocalPort
-        { get { return _connectionManager.LocalPort; } }
+        public int ActiveLocalServicePort
+        { get { return _connectionManager.LocalServicePort; } }
 
         public BinaryNumber IPv4DhtNodeID
         { get { return _connectionManager.DhtManager.IPv4DhtNodeId; } }

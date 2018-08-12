@@ -147,7 +147,7 @@ namespace MeshCore.Network.Connections
             if (_node.Type == MeshNodeType.Tor)
             {
                 _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                localEP = new IPEndPoint(IPAddress.Loopback, _node.LocalPort);
+                localEP = new IPEndPoint(IPAddress.Loopback, _node.LocalServicePort);
             }
             else
             {
@@ -158,14 +158,14 @@ namespace MeshCore.Network.Connections
                         {
                             //below vista
                             _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                            localEP = new IPEndPoint(IPAddress.Any, _node.LocalPort);
+                            localEP = new IPEndPoint(IPAddress.Any, _node.LocalServicePort);
                         }
                         else
                         {
                             //vista & above
                             _tcpListener = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
                             _tcpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
-                            localEP = new IPEndPoint(IPAddress.IPv6Any, _node.LocalPort);
+                            localEP = new IPEndPoint(IPAddress.IPv6Any, _node.LocalServicePort);
                         }
                         break;
 
@@ -173,19 +173,19 @@ namespace MeshCore.Network.Connections
                         if (Socket.OSSupportsIPv6)
                         {
                             _tcpListener = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
-                            localEP = new IPEndPoint(IPAddress.IPv6Any, _node.LocalPort);
+                            localEP = new IPEndPoint(IPAddress.IPv6Any, _node.LocalServicePort);
                         }
                         else
                         {
                             _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                            localEP = new IPEndPoint(IPAddress.Any, _node.LocalPort);
+                            localEP = new IPEndPoint(IPAddress.Any, _node.LocalServicePort);
                         }
 
                         break;
 
                     default: //unknown
                         _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                        localEP = new IPEndPoint(IPAddress.Any, _node.LocalPort);
+                        localEP = new IPEndPoint(IPAddress.Any, _node.LocalServicePort);
                         break;
                 }
             }
