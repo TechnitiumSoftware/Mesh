@@ -1,12 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <PackageId>Mesh</PackageId>
+    <Authors>Shreyas Zare</Authors>
+    <Product>Technitium Mesh</Product>
+    <Description>.NET Standard 2.0</Description>
+    <PackageProjectUrl>https://mesh.im</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/TechnitiumSoftware/Mesh</RepositoryUrl>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Folder Include="Network\SecureChannel\" />
-  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="TechnitiumLibrary.IO">
