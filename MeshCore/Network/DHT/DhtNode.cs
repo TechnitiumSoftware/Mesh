@@ -72,14 +72,28 @@ namespace MeshCore.Network.DHT
 
         #region constructor
 
-        public DhtNode(IDhtConnectionManager manager, EndPoint nodeEP, bool isInternetNode)
+        public DhtNode(IDhtConnectionManager manager, EndPoint nodeEP)
         {
             _manager = manager;
 
-            if (isInternetNode)
-                _currentNode = new CurrentNode(BinaryNumber.GenerateRandomNumber256(), nodeEP);
-            else
-                _currentNode = new CurrentNode(nodeEP);
+            switch (nodeEP.AddressFamily)
+            {
+                case AddressFamily.InterNetwork:
+                case AddressFamily.InterNetworkV6:
+                    if (IPAddress.IsLoopback((nodeEP as IPEndPoint).Address))
+                        _currentNode = new CurrentNode(BinaryNumber.GenerateRandomNumber256(), nodeEP);
+                    else
+                        _currentNode = new CurrentNode(nodeEP);
+
+                    break;
+
+                case AddressFamily.Unspecified:
+                    _currentNode = new CurrentNode(nodeEP);
+                    break;
+
+                default:
+                    throw new NotSupportedException();
+            }
 
             //init routing table
             _routingTable = new KBucket(_currentNode);
@@ -99,7 +113,7 @@ namespace MeshCore.Network.DHT
                     _routingTable.RefreshBucket(this);
 
                     //find closest contacts for current node id
-                    NodeContact[] initialContacts = _routingTable.GetKClosestContacts(_currentNode.NodeId);
+                    NodeContact[] initialContacts = _routingTable.GetKClosestContacts(_currentNode.NodeId, true);
 
                     if (initialContacts.Length > 0)
                         QueryFindNode(initialContacts, _currentNode.NodeId); //query manager auto add contacts that respond
@@ -142,25 +156,27 @@ namespace MeshCore.Network.DHT
 
         private DhtRpcPacket ProcessQuery(DhtRpcPacket query, EndPoint remoteNodeEP)
         {
-            //remoteNodeEP will be as seen by connection manager and always will be IPEndPoint
-            //in case of remote node querying via Tor, use the onion address from the query as remote end point
+            //in case of remote node querying via Tor, remoteNodeEP.Address will be loopback IP. Use the onion address from the query as remote end point
 
-            EndPoint remoteEP;
-
-            if (query.SourceNodeEP.AddressFamily == AddressFamily.Unspecified)
+            if (!_currentNode.NodeEP.Equals(remoteNodeEP))
             {
-                //remote node query via Tor
-                //use the tor hidden end point claimed by remote node
-                remoteEP = query.SourceNodeEP;
-            }
-            else
-            {
-                //use remote node end point as seen by connection manager and use port from query
-                remoteEP = new IPEndPoint((remoteNodeEP as IPEndPoint).Address, query.SourceNodePort);
-            }
+                switch (remoteNodeEP.AddressFamily)
+                {
+                    case AddressFamily.InterNetwork:
+                    case AddressFamily.InterNetworkV6:
+                        IPAddress remoteNodeAddress = (remoteNodeEP as IPEndPoint).Address;
 
-            //try add remote node
-            AddNode(remoteEP);
+                        if (IPAddress.IsLoopback(remoteNodeAddress) && (query.SourceNodeEP.AddressFamily == AddressFamily.Unspecified) && (query.SourceNodeEP as DomainEndPoint).Address.EndsWith(".onion", StringComparison.CurrentCultureIgnoreCase))
+                            AddNode(query.SourceNodeEP); //use the tor hidden end point claimed by remote node
+                        else
+                            AddNode(new IPEndPoint(remoteNodeAddress, query.SourceNodeEP.GetPort())); //use remote node end point as seen by connection manager and use port from query
+
+                        break;
+
+                    default:
+                        throw new NotSupportedException();
+                }
+            }
 
             Debug.Write(this.GetType().Name, "query received from: " + remoteNodeEP.ToString() + "; type: " + query.Type.ToString());
 
@@ -171,29 +187,29 @@ namespace MeshCore.Network.DHT
                     return DhtRpcPacket.CreatePingPacket(_currentNode);
 
                 case DhtRpcType.FIND_NODE:
-                    return DhtRpcPacket.CreateFindNodePacketResponse(_currentNode, query.NetworkID, _routingTable.GetKClosestContacts(query.NetworkID));
+                    return DhtRpcPacket.CreateFindNodePacketResponse(_currentNode, query.NetworkId, _routingTable.GetKClosestContacts(query.NetworkId, false));
 
                 case DhtRpcType.FIND_PEERS:
-                    EndPoint[] peers = _currentNode.GetPeers(query.NetworkID);
+                    EndPoint[] peers = _currentNode.GetPeers(query.NetworkId);
                     if (peers.Length == 0)
-                        return DhtRpcPacket.CreateFindPeersPacketResponse(_currentNode, query.NetworkID, _routingTable.GetKClosestContacts(query.NetworkID), peers);
+                        return DhtRpcPacket.CreateFindPeersPacketResponse(_currentNode, query.NetworkId, _routingTable.GetKClosestContacts(query.NetworkId, false), peers);
                     else
-                        return DhtRpcPacket.CreateFindPeersPacketResponse(_currentNode, query.NetworkID, new NodeContact[] { }, peers);
+                        return DhtRpcPacket.CreateFindPeersPacketResponse(_currentNode, query.NetworkId, new NodeContact[] { }, peers);
 
                 case DhtRpcType.ANNOUNCE_PEER:
                     if ((query.Peers != null) && (query.Peers.Length > 0))
                     {
                         EndPoint peerEP;
 
-                        if (remoteNodeEP.AddressFamily == AddressFamily.Unspecified)
-                            peerEP = new DomainEndPoint((remoteNodeEP as DomainEndPoint).Address, query.Peers[0].GetPort());
+                        if (query.Peers[0].AddressFamily == AddressFamily.Unspecified)
+                            peerEP = query.Peers[0];
                         else
                             peerEP = new IPEndPoint((remoteNodeEP as IPEndPoint).Address, query.Peers[0].GetPort());
 
-                        _currentNode.StorePeer(query.NetworkID, peerEP);
+                        _currentNode.StorePeer(query.NetworkId, peerEP);
                     }
 
-                    return DhtRpcPacket.CreateAnnouncePeerPacketResponse(_currentNode, query.NetworkID, _currentNode.GetPeers(query.NetworkID));
+                    return DhtRpcPacket.CreateAnnouncePeerPacketResponse(_currentNode, query.NetworkId, _currentNode.GetPeers(query.NetworkId));
 
                 default:
                     throw new Exception("Invalid DHT-RPC type.");
@@ -592,7 +608,7 @@ namespace MeshCore.Network.DHT
 
         public EndPoint[] FindPeers(BinaryNumber networkId)
         {
-            NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId);
+            NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId, true);
 
             if (initialContacts.Length < 1)
                 return null;
@@ -602,7 +618,7 @@ namespace MeshCore.Network.DHT
 
         public EndPoint[] Announce(BinaryNumber networkId, EndPoint serviceEP)
         {
-            NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId);
+            NodeContact[] initialContacts = _routingTable.GetKClosestContacts(networkId, true);
 
             if (initialContacts.Length < 1)
                 return null;
@@ -610,9 +626,9 @@ namespace MeshCore.Network.DHT
             return QueryAnnounce(initialContacts, networkId, serviceEP);
         }
 
-        public EndPoint[] GetAllNodeEPs(bool includeStaleContacts)
+        public EndPoint[] GetAllNodeEPs(bool includeStaleContacts, bool includeSelfContact)
         {
-            NodeContact[] contacts = _routingTable.GetAllContacts(includeStaleContacts);
+            NodeContact[] contacts = _routingTable.GetAllContacts(includeStaleContacts, includeSelfContact);
             EndPoint[] nodeEPs = new EndPoint[contacts.Length];
 
             for (int i = 0; i < contacts.Length; i++)
@@ -621,9 +637,9 @@ namespace MeshCore.Network.DHT
             return nodeEPs;
         }
 
-        public EndPoint[] GetKRandomNodeEPs()
+        public EndPoint[] GetKRandomNodeEPs(bool includeSelfContact)
         {
-            NodeContact[] contacts = _routingTable.GetKClosestContacts(BinaryNumber.GenerateRandomNumber256());
+            NodeContact[] contacts = _routingTable.GetKClosestContacts(BinaryNumber.GenerateRandomNumber256(), includeSelfContact);
             EndPoint[] nodeEPs = new EndPoint[contacts.Length];
 
             for (int i = 0; i < contacts.Length; i++)
@@ -683,14 +699,32 @@ namespace MeshCore.Network.DHT
 
             public void StorePeer(BinaryNumber networkId, EndPoint peerEP)
             {
-                if (NodeEP.AddressFamily != peerEP.AddressFamily)
-                    return; //avoid storing cross family peer end points
+                switch (peerEP.AddressFamily)
+                {
+                    case AddressFamily.Unspecified:
+                        if (!(peerEP as DomainEndPoint).Address.EndsWith(".onion", StringComparison.CurrentCultureIgnoreCase)) //allow only .onion domain end points
+                            return;
 
-                if ((peerEP.AddressFamily == AddressFamily.InterNetwork) && (peerEP as IPEndPoint).Address.Equals(IPAddress.Any))
-                    return; //avoid storing [0.0.0.0]
+                        break;
 
-                if ((peerEP.AddressFamily == AddressFamily.InterNetworkV6) && (peerEP as IPEndPoint).Address.Equals(IPAddress.IPv6Any))
-                    return; //avoid storing [::]
+                    case AddressFamily.InterNetwork:
+                        if ((peerEP as IPEndPoint).Address.Equals(IPAddress.Any)) //avoid storing [0.0.0.0]
+                            return;
+
+                        if (NodeEP.AddressFamily != AddressFamily.InterNetwork) //avoid storing cross family peer end points
+                            return;
+
+                        break;
+
+                    case AddressFamily.InterNetworkV6:
+                        if ((peerEP as IPEndPoint).Address.Equals(IPAddress.IPv6Any)) //avoid storing [::]
+                            return;
+
+                        if (NodeEP.AddressFamily != AddressFamily.InterNetworkV6) //avoid storing cross family peer end points
+                            return;
+
+                        break;
+                }
 
                 List<PeerEndPoint> peerList;
 
