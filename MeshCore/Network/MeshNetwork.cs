@@ -518,9 +518,24 @@ namespace MeshCore.Network
         {
             try
             {
+                lock (_dhtIPv4Peers)
+                {
+                    _dhtIPv4Peers.Clear();
+                }
+
+                lock (_dhtIPv6Peers)
+                {
+                    _dhtIPv6Peers.Clear();
+                }
+
                 lock (_dhtLanPeers)
                 {
                     _dhtLanPeers.Clear();
+                }
+
+                lock (_dhtTorPeers)
+                {
+                    _dhtTorPeers.Clear();
                 }
 
                 if ((_type == MeshNetworkType.Private) && IsInvitationPending())
@@ -530,7 +545,7 @@ namespace MeshCore.Network
                 }
                 else
                 {
-                    _connectionManager.DhtManager.BeginAnnounce(_networkId, _localNetworkOnly, new IPEndPoint(IPAddress.Any, _connectionManager.LocalPort), DhtCallback);
+                    _connectionManager.DhtManager.BeginAnnounce(_networkId, _localNetworkOnly, DhtCallback);
 
                     if (!_localNetworkOnly)
                     {
@@ -556,8 +571,6 @@ namespace MeshCore.Network
                     case DhtNetworkType.IPv4Internet:
                         lock (_dhtIPv4Peers)
                         {
-                            _dhtIPv4Peers.Clear();
-
                             foreach (EndPoint peerEP in peerEPs)
                             {
                                 _dhtIPv4Peers.Add(peerEP);
@@ -569,8 +582,6 @@ namespace MeshCore.Network
                     case DhtNetworkType.IPv6Internet:
                         lock (_dhtIPv6Peers)
                         {
-                            _dhtIPv6Peers.Clear();
-
                             foreach (EndPoint peerEP in peerEPs)
                             {
                                 _dhtIPv6Peers.Add(peerEP);
@@ -593,8 +604,6 @@ namespace MeshCore.Network
                     case DhtNetworkType.TorNetwork:
                         lock (_dhtTorPeers)
                         {
-                            _dhtTorPeers.Clear();
-
                             foreach (EndPoint peerEP in peerEPs)
                             {
                                 _dhtTorPeers.Add(peerEP);
@@ -661,6 +670,8 @@ namespace MeshCore.Network
 
             ThreadPool.QueueUserWorkItem(delegate (object state)
             {
+                Debug.Write(this.GetType().Name, "BeginMakeConnection: " + peerEP.ToString());
+
                 Connection connection;
 
                 try
@@ -2649,7 +2660,7 @@ namespace MeshCore.Network
 
                                         foreach (MeshNetworkPeerInfo peerInfo in peerExchange.Peers)
                                         {
-                                            foreach (IPEndPoint peerEP in peerInfo.PeerEPs)
+                                            foreach (EndPoint peerEP in peerInfo.PeerEPs)
                                                 _peer._network.BeginMakeConnection(peerEP, _connection);
                                         }
 
