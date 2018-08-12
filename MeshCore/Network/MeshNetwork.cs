@@ -469,7 +469,7 @@ namespace MeshCore.Network
                 if ((_status == MeshNetworkStatus.Online) && (knownPeers[0].PeerEPs != null))
                 {
                     foreach (EndPoint peerEP in knownPeers[0].PeerEPs)
-                        BeginMakeConnection(peerEP);
+                        MakeConnectionAsync(peerEP);
                 }
             }
             else
@@ -490,7 +490,7 @@ namespace MeshCore.Network
                         if ((_status == MeshNetworkStatus.Online) && (knownPeer.PeerEPs != null))
                         {
                             foreach (EndPoint peerEP in knownPeer.PeerEPs)
-                                BeginMakeConnection(peerEP);
+                                MakeConnectionAsync(peerEP);
                         }
                     }
                 }
@@ -541,11 +541,11 @@ namespace MeshCore.Network
                 if ((_type == MeshNetworkType.Private) && IsInvitationPending())
                 {
                     //find other peer via its masked user id to send invitation
-                    _connectionManager.DhtManager.BeginFindPeers(_otherPeer.MaskedPeerUserId, _localNetworkOnly, DhtCallback);
+                    _connectionManager.DhtManager.FindPeersAsync(_otherPeer.MaskedPeerUserId, _localNetworkOnly, DhtCallback);
                 }
                 else
                 {
-                    _connectionManager.DhtManager.BeginAnnounce(_networkId, _localNetworkOnly, DhtCallback);
+                    _connectionManager.DhtManager.AnnounceAsync(_networkId, _localNetworkOnly, DhtCallback);
 
                     if (!_localNetworkOnly)
                     {
@@ -574,7 +574,7 @@ namespace MeshCore.Network
                             foreach (EndPoint peerEP in peerEPs)
                             {
                                 _dhtIPv4Peers.Add(peerEP);
-                                BeginMakeConnection(peerEP);
+                                MakeConnectionAsync(peerEP);
                             }
                         }
                         break;
@@ -585,7 +585,7 @@ namespace MeshCore.Network
                             foreach (EndPoint peerEP in peerEPs)
                             {
                                 _dhtIPv6Peers.Add(peerEP);
-                                BeginMakeConnection(peerEP);
+                                MakeConnectionAsync(peerEP);
                             }
                         }
                         break;
@@ -596,7 +596,7 @@ namespace MeshCore.Network
                             foreach (EndPoint peerEP in peerEPs)
                             {
                                 _dhtLanPeers.Add(peerEP);
-                                BeginMakeConnection(peerEP);
+                                MakeConnectionAsync(peerEP);
                             }
                         }
                         break;
@@ -607,7 +607,7 @@ namespace MeshCore.Network
                             foreach (EndPoint peerEP in peerEPs)
                             {
                                 _dhtTorPeers.Add(peerEP);
-                                BeginMakeConnection(peerEP);
+                                MakeConnectionAsync(peerEP);
                             }
                         }
                         break;
@@ -639,7 +639,7 @@ namespace MeshCore.Network
                         }
 
 
-                        BeginMakeVirtualConnection(peerEP, viaConnection);
+                        MakeVirtualConnectionAsync(peerEP, viaConnection);
                     }
                 }
             }
@@ -657,7 +657,7 @@ namespace MeshCore.Network
             }
         }
 
-        internal void BeginMakeConnection(EndPoint peerEP, Connection fallbackViaConnection = null)
+        internal void MakeConnectionAsync(EndPoint peerEP, Connection fallbackViaConnection = null)
         {
             if (_status == MeshNetworkStatus.Offline)
                 return;
@@ -670,7 +670,7 @@ namespace MeshCore.Network
 
             ThreadPool.QueueUserWorkItem(delegate (object state)
             {
-                Debug.Write(this.GetType().Name, "BeginMakeConnection: " + peerEP.ToString());
+                Debug.Write(this.GetType().Name, "MakeConnectionAsync: " + peerEP.ToString());
 
                 Connection connection;
 
@@ -708,7 +708,7 @@ namespace MeshCore.Network
             });
         }
 
-        private void BeginMakeVirtualConnection(EndPoint peerEP, Connection viaConnection)
+        private void MakeVirtualConnectionAsync(EndPoint peerEP, Connection viaConnection)
         {
             if (_status == MeshNetworkStatus.Offline)
                 return;
@@ -721,6 +721,8 @@ namespace MeshCore.Network
 
             ThreadPool.QueueUserWorkItem(delegate (object state)
             {
+                Debug.Write(this.GetType().Name, "MakeVirtualConnectionAsync: " + peerEP.ToString() + " via " + viaConnection.RemotePeerEP.ToString());
+
                 Connection connection;
 
                 try
@@ -2661,7 +2663,7 @@ namespace MeshCore.Network
                                         foreach (MeshNetworkPeerInfo peerInfo in peerExchange.Peers)
                                         {
                                             foreach (EndPoint peerEP in peerInfo.PeerEPs)
-                                                _peer._network.BeginMakeConnection(peerEP, _connection);
+                                                _peer._network.MakeConnectionAsync(peerEP, _connection);
                                         }
 
                                         break;
@@ -2942,7 +2944,7 @@ namespace MeshCore.Network
                         Dispose();
 
                         //try reconnection due to unexpected channel closure (mostly read timed out exception)
-                        _peer._network.BeginMakeConnection(_channel.RemotePeerEP);
+                        _peer._network.MakeConnectionAsync(_channel.RemotePeerEP);
                     }
                 }
 

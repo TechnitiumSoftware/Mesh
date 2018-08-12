@@ -1000,7 +1000,7 @@ namespace MeshCore.Network.Connections
             }
 
             //announce self on DHT for the hosted network
-            _dhtManager.BeginAnnounce(networkId, false, null);
+            _dhtManager.AnnounceAsync(networkId, false, null);
         }
 
         public void TcpRelayServerUnregisterHostedNetwork(Connection connection, BinaryNumber networkId)

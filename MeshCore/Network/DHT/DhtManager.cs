@@ -275,7 +275,7 @@ namespace MeshCore.Network.DHT
             return newList;
         }
 
-        private void BeginAnnounce(BinaryNumber networkId, bool localNetworkOnly, EndPoint serviceEP, Action<DhtNetworkType, ICollection<EndPoint>> callback)
+        private void AnnounceAsync(BinaryNumber networkId, bool localNetworkOnly, EndPoint serviceEP, Action<DhtNetworkType, ICollection<EndPoint>> callback)
         {
             if (!localNetworkOnly)
             {
@@ -421,12 +421,12 @@ namespace MeshCore.Network.DHT
             }
         }
 
-        public void BeginFindPeers(BinaryNumber networkId, bool localNetworkOnly, Action<DhtNetworkType, ICollection<EndPoint>> callback)
+        public void FindPeersAsync(BinaryNumber networkId, bool localNetworkOnly, Action<DhtNetworkType, ICollection<EndPoint>> callback)
         {
-            BeginAnnounce(networkId, localNetworkOnly, null, callback);
+            AnnounceAsync(networkId, localNetworkOnly, null, callback);
         }
 
-        public void BeginAnnounce(BinaryNumber networkId, bool localNetworkOnly, Action<DhtNetworkType, ICollection<EndPoint>> callback)
+        public void AnnounceAsync(BinaryNumber networkId, bool localNetworkOnly, Action<DhtNetworkType, ICollection<EndPoint>> callback)
         {
             EndPoint serviceEP;
 
@@ -435,7 +435,7 @@ namespace MeshCore.Network.DHT
             else
                 serviceEP = _torInternetDhtNode.LocalNodeEP;
 
-            BeginAnnounce(networkId, localNetworkOnly, serviceEP, callback);
+            AnnounceAsync(networkId, localNetworkOnly, serviceEP, callback);
         }
 
         public EndPoint[] GetIPv4DhtNodes()
