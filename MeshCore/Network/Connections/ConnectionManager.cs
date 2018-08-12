@@ -131,15 +131,16 @@ namespace MeshCore.Network.Connections
         IPAddress _ipv6LocalLiveIP;
         EndPoint _ipv6ConnectivityCheckExternalEP;
 
-        readonly int _localPort;
+        readonly int _localServicePort;
 
         #endregion
 
         #region constructor
 
-        public ConnectionManager(MeshNode node)
+        public ConnectionManager(MeshNode node, TorController torController)
         {
             _node = node;
+            _torController = torController;
 
             IPEndPoint localEP;
 
@@ -204,34 +205,11 @@ namespace MeshCore.Network.Connections
                 _tcpListener.Listen(10);
             }
 
-            _localPort = (_tcpListener.LocalEndPoint as IPEndPoint).Port;
+            _localServicePort = (_tcpListener.LocalEndPoint as IPEndPoint).Port;
             _localPeerId = BinaryNumber.GenerateRandomNumber256();
 
-            //init tor controller
-            _torController = new TorController(_node.TorExecutableFile);
-            _torController.ControlPort = _localPort + 1;
-            _torController.Socks5EndPoint = new IPEndPoint(IPAddress.Loopback, _localPort + 2);
+            //tor proxy
             _torProxy = new NetProxy(new SocksClient(_torController.Socks5EndPoint));
-
-            if (_node.Proxy != null)
-            {
-                switch (_node.Proxy.Type)
-                {
-                    case NetProxyType.Http:
-                        _torController.ProxyType = TorProxyType.Http;
-                        _torController.ProxyHost = _node.Proxy.Address;
-                        _torController.ProxyPort = _node.Proxy.Port;
-                        _torController.ProxyCredential = _node.Proxy.Credential;
-                        break;
-
-                    case NetProxyType.Socks5:
-                        _torController.ProxyType = TorProxyType.Socks5;
-                        _torController.ProxyHost = _node.Proxy.Address;
-                        _torController.ProxyPort = _node.Proxy.Port;
-                        _torController.ProxyCredential = _node.Proxy.Credential;
-                        break;
-                }
-            }
 
             if (_node.Type == MeshNodeType.Tor)
             {
@@ -240,11 +218,11 @@ namespace MeshCore.Network.Connections
                 _torController.AutoSwitchCircuit = true;
 
                 //start hidden service for incoming connections via tor
-                _torHiddenServiceInfo = _torController.CreateHiddenService(_localPort);
+                _torHiddenServiceInfo = _torController.CreateHiddenService(_localServicePort);
             }
 
             //init dht node
-            _dhtManager = new DhtManager(_localPort, _torHiddenServiceInfo?.ServiceId + ".onion", this, _node.IPv4BootstrapDhtNodes, _node.IPv6BootstrapDhtNodes, _node.TorBootstrapDhtNodes, _node.Proxy, (_node.Type == MeshNodeType.P2P), (_node.Type == MeshNodeType.Tor));
+            _dhtManager = new DhtManager(_localServicePort, this, (_node.Type == MeshNodeType.Tor ? _torProxy : _node.Proxy), _node.IPv4BootstrapDhtNodes, _node.IPv6BootstrapDhtNodes, _node.TorBootstrapDhtNodes, _torHiddenServiceInfo?.ServiceId + ".onion", (_node.Type == MeshNodeType.Tor));
 
             //start accepting connections
             _tcpListenerThread = new Thread(AcceptTcpConnectionAsync);
@@ -322,6 +300,8 @@ namespace MeshCore.Network.Connections
 
         private Socket MakeTcpConnection(EndPoint remoteNodeEP)
         {
+            Debug.Write(this.GetType().Name, "MakeTcpConnection: " + remoteNodeEP.ToString());
+
             Socket socket = null;
 
             try
@@ -591,7 +571,7 @@ namespace MeshCore.Network.Connections
                 //send request
                 s.WriteByte(1); //version
                 _localPeerId.WriteTo(s); //peer id
-                s.Write(BitConverter.GetBytes(Convert.ToUInt16(_localPort)), 0, 2); //service port
+                s.Write(BitConverter.GetBytes(Convert.ToUInt16(_localServicePort)), 0, 2); //service port
                 s.Flush();
 
                 //read response
@@ -692,19 +672,33 @@ namespace MeshCore.Network.Connections
                 _makeConnectionList.Add(remotePeerEP, null);
             }
 
+            Debug.Write(this.GetType().Name, "MakeConnection: " + remotePeerEP.ToString());
+
             try
             {
                 //check if self
                 switch (remotePeerEP.AddressFamily)
                 {
                     case AddressFamily.InterNetwork:
+                        if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.Any))
+                            throw new IOException("Cannot connect to remote port: self connection.");
+
                         if (remotePeerEP.Equals(this.IPv4ExternalEndPoint))
                             throw new IOException("Cannot connect to remote port: self connection.");
 
                         break;
 
                     case AddressFamily.InterNetworkV6:
+                        if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.IPv6Any))
+                            throw new IOException("Cannot connect to remote port: self connection.");
+
                         if (remotePeerEP.Equals(this.IPv6ExternalEndPoint))
+                            throw new IOException("Cannot connect to remote port: self connection.");
+
+                        break;
+
+                    case AddressFamily.Unspecified:
+                        if (remotePeerEP.Equals(this.TorHiddenEndPoint))
                             throw new IOException("Cannot connect to remote port: self connection.");
 
                         break;
@@ -773,13 +767,25 @@ namespace MeshCore.Network.Connections
                 switch (remotePeerEP.AddressFamily)
                 {
                     case AddressFamily.InterNetwork:
+                        if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.Any))
+                            throw new IOException("Cannot connect to remote port: self connection.");
+
                         if (remotePeerEP.Equals(this.IPv4ExternalEndPoint))
                             throw new IOException("Cannot connect to remote port: self connection.");
 
                         break;
 
                     case AddressFamily.InterNetworkV6:
+                        if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.IPv6Any))
+                            throw new IOException("Cannot connect to remote port: self connection.");
+
                         if (remotePeerEP.Equals(this.IPv6ExternalEndPoint))
+                            throw new IOException("Cannot connect to remote port: self connection.");
+
+                        break;
+
+                    case AddressFamily.Unspecified:
+                        if (remotePeerEP.Equals(this.TorHiddenEndPoint))
                             throw new IOException("Cannot connect to remote port: self connection.");
 
                         break;
@@ -994,7 +1000,7 @@ namespace MeshCore.Network.Connections
             }
 
             //announce self on DHT for the hosted network
-            _dhtManager.BeginAnnounce(networkId, false, new IPEndPoint(IPAddress.Any, _localPort), null);
+            _dhtManager.BeginAnnounce(networkId, false, null);
         }
 
         public void TcpRelayServerUnregisterHostedNetwork(Connection connection, BinaryNumber networkId)
@@ -1404,7 +1410,7 @@ namespace MeshCore.Network.Connections
                     }
 
                     //do upnp port forwarding for Mesh
-                    if (_upnpDevice.ForwardPort(ProtocolType.Tcp, _localPort, new IPEndPoint(defaultNetworkInfo.LocalIP, _localPort), "Mesh", true))
+                    if (_upnpDevice.ForwardPort(ProtocolType.Tcp, _localServicePort, new IPEndPoint(defaultNetworkInfo.LocalIP, _localServicePort), "Mesh", true))
                         newUPnPDeviceStatus = UPnPDeviceStatus.PortForwarded;
                     else
                         newUPnPDeviceStatus = UPnPDeviceStatus.PortForwardingFailed;
@@ -1458,7 +1464,7 @@ namespace MeshCore.Network.Connections
                                     switch (newInternetStatus)
                                     {
                                         case InternetConnectivityStatus.DirectInternetConnection:
-                                            if (!CanAcceptIncomingConnection(_localPort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP))
+                                            if (!CanAcceptIncomingConnection(_localServicePort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP))
                                             {
                                                 newInternetStatus = InternetConnectivityStatus.NatOrFirewalledInternetConnection;
                                                 _ipv4LocalLiveIP = null;
@@ -1466,7 +1472,7 @@ namespace MeshCore.Network.Connections
                                             break;
 
                                         case InternetConnectivityStatus.NatOrFirewalledInternetConnection:
-                                            CanAcceptIncomingConnection(_localPort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP);
+                                            CanAcceptIncomingConnection(_localServicePort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP);
                                             break;
 
                                         case InternetConnectivityStatus.NatInternetConnectionViaUPnPRouter:
@@ -1498,7 +1504,7 @@ namespace MeshCore.Network.Connections
                             //connectivity check can still be done if user manually calls ReCheckConnectivity()
                             newUPnPDeviceStatus = UPnPDeviceStatus.PortForwardedNotAccessible;
                         }
-                        else if (!CanAcceptIncomingConnection(_localPort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP))
+                        else if (!CanAcceptIncomingConnection(_localServicePort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP))
                         {
                             newUPnPDeviceStatus = UPnPDeviceStatus.PortForwardedNotAccessible;
                         }
@@ -1618,7 +1624,7 @@ namespace MeshCore.Network.Connections
                             default:
                                 if (WebUtilities.IsWebAccessible(null, null, WebClientExNetworkType.IPv6Only, 10000, false))
                                 {
-                                    if (!CanAcceptIncomingConnection(_localPort, WebClientExNetworkType.IPv6Only, IPv6_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv6ConnectivityCheckExternalEP))
+                                    if (!CanAcceptIncomingConnection(_localServicePort, WebClientExNetworkType.IPv6Only, IPv6_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv6ConnectivityCheckExternalEP))
                                     {
                                         newInternetStatus = InternetConnectivityStatus.FirewalledInternetConnection;
                                         _ipv6LocalLiveIP = null;
@@ -1716,8 +1722,8 @@ namespace MeshCore.Network.Connections
         public BinaryNumber LocalPeerId
         { get { return _localPeerId; } }
 
-        public int LocalPort
-        { get { return _localPort; } }
+        public int LocalServicePort
+        { get { return _localServicePort; } }
 
         public InternetConnectivityStatus IPv4InternetStatus
         { get { return _ipv4InternetStatus; } }
@@ -1733,7 +1739,7 @@ namespace MeshCore.Network.Connections
             get
             {
                 if (_torController.IsRunning && (_torHiddenServiceInfo != null))
-                    return new DomainEndPoint(_torHiddenServiceInfo.ServiceId + ".onion", _localPort);
+                    return new DomainEndPoint(_torHiddenServiceInfo.ServiceId + ".onion", _localServicePort);
 
                 return null;
             }
@@ -1774,7 +1780,7 @@ namespace MeshCore.Network.Connections
                         if (_ipv4LocalLiveIP == null)
                             return null;
                         else
-                            return new IPEndPoint(_ipv4LocalLiveIP, _localPort);
+                            return new IPEndPoint(_ipv4LocalLiveIP, _localServicePort);
 
                     case InternetConnectivityStatus.NatInternetConnectionViaUPnPRouter:
                         switch (_upnpDeviceStatus)
@@ -1783,7 +1789,7 @@ namespace MeshCore.Network.Connections
                                 if (_upnpExternalIP == null)
                                     return null;
                                 else
-                                    return new IPEndPoint(_upnpExternalIP, _localPort);
+                                    return new IPEndPoint(_upnpExternalIP, _localServicePort);
 
                             default:
                                 return null;
@@ -1808,7 +1814,7 @@ namespace MeshCore.Network.Connections
                         if (_ipv6LocalLiveIP == null)
                             return null;
                         else
-                            return new IPEndPoint(_ipv6LocalLiveIP, _localPort);
+                            return new IPEndPoint(_ipv6LocalLiveIP, _localServicePort);
 
                     case InternetConnectivityStatus.Identifying:
                         return null;
