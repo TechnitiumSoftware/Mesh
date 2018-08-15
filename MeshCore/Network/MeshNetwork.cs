@@ -503,7 +503,7 @@ namespace MeshCore.Network
                 _pingTimer.Change(PING_TIMER_INTERVAL, PING_TIMER_INTERVAL);
 
                 //start dht announce
-                _dhtAnnounceTimer.Change(DHT_ANNOUNCE_TIMER_INITIAL_INTERVAL, DHT_ANNOUNCE_TIMER_INTERVAL);
+                _dhtAnnounceTimer.Change((new Random(DateTime.Now.Second * _userId.Value[0])).Next(2000, 20000), DHT_ANNOUNCE_TIMER_INTERVAL); //variable initial interval so that all networks timers dont trigger together
                 _dhtAnnounceTimerIsRunning = true;
 
                 //connectivity status update
