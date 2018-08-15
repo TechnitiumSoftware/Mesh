@@ -59,7 +59,7 @@ namespace MeshCore.Network.DHT
 
         readonly int _localServicePort;
 
-        const int NETWORK_WATCHER_INTERVAL = 15000;
+        const int NETWORK_WATCHER_INTERVAL = 30000;
         readonly Timer _networkWatcher;
         readonly List<NetworkInfo> _networks = new List<NetworkInfo>();
         readonly List<LocalNetworkDhtManager> _localNetworkDhtManagers = new List<LocalNetworkDhtManager>();
@@ -96,6 +96,11 @@ namespace MeshCore.Network.DHT
 
                 //add known bootstrap nodes
                 _torInternetDhtNode.AddNode(torBootstrapNodes);
+
+                //set higher timeout value for internet and tor DHT nodes since they will be using tor network
+                _ipv4InternetDhtNode.QueryTimeout = 10000;
+                _ipv6InternetDhtNode.QueryTimeout = 10000;
+                _torInternetDhtNode.QueryTimeout = 10000;
             }
             else
             {
@@ -111,6 +116,7 @@ namespace MeshCore.Network.DHT
                     using (WebClientEx wC = new WebClientEx())
                     {
                         wC.Proxy = proxy;
+                        wC.Timeout = 10000;
 
                         using (BinaryReader bR = new BinaryReader(new MemoryStream(wC.DownloadData(DHT_BOOTSTRAP_URL))))
                         {
@@ -229,6 +235,9 @@ namespace MeshCore.Network.DHT
                             {
                                 if (IPAddress.IsLoopback(network.LocalIP))
                                     continue; //skip loopback networks
+
+                                if (network.LocalIP.AddressFamily == AddressFamily.InterNetworkV6)
+                                    continue; //skip ipv6 private networks for saving resources
 
                                 if (!NetUtilities.IsPrivateIP(network.LocalIP))
                                     continue; //skip public networks
