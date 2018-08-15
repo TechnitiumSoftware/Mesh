@@ -117,10 +117,9 @@ namespace MeshCore
             //set min threads since the default value is too small for node at startup due to multiple networks queuing too many tasks immediately which block for a while
             {
                 int minWorker, minIOC;
-                ThreadPool.GetMinThreads(out minWorker, out minIOC);
 
-                minWorker = Environment.ProcessorCount * 32;
-                minIOC = Environment.ProcessorCount * 16;
+                minWorker = Environment.ProcessorCount * 64;
+                minIOC = Environment.ProcessorCount * 64;
 
                 ThreadPool.SetMinThreads(minWorker, minIOC);
             }
