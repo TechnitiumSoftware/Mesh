@@ -35,7 +35,8 @@ namespace MeshCore
 
         public static void SetDebug(IDebug debug)
         {
-            _debug = debug;
+            if (_debug == null)
+                _debug = debug;
         }
 
         public static void Write(string source, Exception ex)
