@@ -54,9 +54,8 @@ namespace MeshCore.Network.DHT
     {
         #region variables
 
-        public const int KADEMLIA_K = 8;
+        internal const int KADEMLIA_K = 8;
         internal const int KADEMLIA_B = 5;
-        const int QUERY_TIMEOUT = 5000;
         const int HEALTH_CHECK_TIMER_INITIAL_INTERVAL = 30 * 1000; //30 sec
         const int HEALTH_CHECK_TIMER_INTERVAL = 15 * 60 * 1000; //15 min
         const int KADEMLIA_ALPHA = 3;
@@ -67,6 +66,8 @@ namespace MeshCore.Network.DHT
         readonly KBucket _routingTable;
 
         readonly Timer _healthTimer;
+
+        int _queryTimeout = 5000;
 
         #endregion
 
@@ -228,8 +229,8 @@ namespace MeshCore.Network.DHT
                 s = _manager.GetConnection(contact.NodeEP);
 
                 //set timeout
-                s.WriteTimeout = QUERY_TIMEOUT;
-                s.ReadTimeout = QUERY_TIMEOUT;
+                s.WriteTimeout = _queryTimeout;
+                s.ReadTimeout = _queryTimeout;
 
                 //send query
                 query.WriteTo(new BinaryWriter(s));
@@ -326,7 +327,7 @@ namespace MeshCore.Network.DHT
                         //query each alpha contact async
                         foreach (NodeContact alphaContact in alphaContacts)
                         {
-                            Thread t = new Thread(delegate (object state)
+                            ThreadPool.QueueUserWorkItem(delegate (object state)
                             {
                                 DhtRpcPacket response;
 
@@ -392,13 +393,10 @@ namespace MeshCore.Network.DHT
                                         Monitor.Pulse(lockObj);
                                 }
                             });
-
-                            t.IsBackground = true;
-                            t.Start();
                         }
 
                         //wait for any of the node contact to return new contacts
-                        if (Monitor.Wait(lockObj, QUERY_TIMEOUT))
+                        if (Monitor.Wait(lockObj, _queryTimeout))
                         {
                             //got reply or final round!
 
@@ -520,7 +518,7 @@ namespace MeshCore.Network.DHT
 
                 foreach (NodeContact contact in contacts)
                 {
-                    Thread t = new Thread(delegate (object state)
+                    ThreadPool.QueueUserWorkItem(delegate (object state)
                     {
                         DhtRpcPacket response = Query(DhtRpcPacket.CreateAnnouncePeerPacketQuery(_currentNode, networkId, serviceEP), contact);
                         if ((response != null) && (response.Type == DhtRpcType.ANNOUNCE_PEER) && (response.Peers.Length > 0))
@@ -540,12 +538,9 @@ namespace MeshCore.Network.DHT
                             }
                         }
                     });
-
-                    t.IsBackground = true;
-                    t.Start();
                 }
 
-                if (Monitor.Wait(peers, QUERY_TIMEOUT))
+                if (Monitor.Wait(peers, _queryTimeout))
                     return peers.ToArray();
 
                 return null;
@@ -559,8 +554,8 @@ namespace MeshCore.Network.DHT
         public void AcceptConnection(Stream s, EndPoint remoteNodeEP)
         {
             //set timeout
-            s.WriteTimeout = QUERY_TIMEOUT;
-            s.ReadTimeout = QUERY_TIMEOUT;
+            s.WriteTimeout = _queryTimeout;
+            s.ReadTimeout = _queryTimeout;
 
             BinaryReader bR = new BinaryReader(s);
             BinaryWriter bW = new BinaryWriter(s);
@@ -666,6 +661,12 @@ namespace MeshCore.Network.DHT
 
         public int TotalNodes
         { get { return _routingTable.TotalContacts; } }
+
+        public int QueryTimeout
+        {
+            get { return _queryTimeout; }
+            set { _queryTimeout = value; }
+        }
 
         #endregion
 
