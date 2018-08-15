@@ -116,21 +116,19 @@ namespace MeshCore
         {
             //set min threads since the default value is too small for node at startup due to multiple networks queuing too many tasks immediately which block for a while
             {
-                int minWorker, minIOC;
-
-                minWorker = Environment.ProcessorCount * 64;
-                minIOC = Environment.ProcessorCount * 64;
+                int minWorker = Environment.ProcessorCount * 64;
+                int minIOC = Environment.ProcessorCount * 64;
 
                 ThreadPool.SetMinThreads(minWorker, minIOC);
             }
         }
 
-        public MeshNode(MeshNodeType type, byte[] privateKey, SecureChannelCipherSuite supportedCiphers, ushort localPort, string profileDisplayName, string profileFolder, string downloadFolder, TorController torController)
+        public MeshNode(MeshNodeType type, byte[] privateKey, SecureChannelCipherSuite supportedCiphers, ushort localServicePort, string profileDisplayName, string profileFolder, string downloadFolder, TorController torController)
         {
             _type = type;
             _privateKey = privateKey;
             _supportedCiphers = supportedCiphers;
-            _localServicePort = localPort;
+            _localServicePort = localServicePort;
             _profileDateModified = DateTime.UtcNow;
             _profileDisplayName = profileDisplayName;
 
