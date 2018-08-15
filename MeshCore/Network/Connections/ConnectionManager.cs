@@ -235,13 +235,8 @@ namespace MeshCore.Network.Connections
             //start connectivity check timer
             _connectivityCheckTimer = new Timer(delegate (object state)
             {
-                Thread t1 = new Thread(IPv4ConnectivityCheck);
-                t1.IsBackground = true;
-                t1.Start();
-
-                Thread t2 = new Thread(IPv6ConnectivityCheck);
-                t2.IsBackground = true;
-                t2.Start();
+                ThreadPool.QueueUserWorkItem(IPv4ConnectivityCheck);
+                ThreadPool.QueueUserWorkItem(IPv6ConnectivityCheck);
             }, null, 1000, CONNECTIVITY_CHECK_TIMER_INTERVAL);
         }
 
@@ -927,17 +922,6 @@ namespace MeshCore.Network.Connections
                 TcpRelayServerUnregisterAllHostedNetworks(connection);
         }
 
-        public void ClientProfileProxyUpdated()
-        {
-            NetProxy proxy = _node.Proxy;
-
-            if (proxy != null)
-            {
-                //stop tcp relay for all networks since this client switched to proxy and can no longer provide tcp relay service
-                //TcpRelayService.StopAllTcpRelays();
-            }
-        }
-
         #endregion
 
         #region IDhtConnectionManager support
@@ -1269,7 +1253,7 @@ namespace MeshCore.Network.Connections
 
         #region internet connectivity
 
-        private void IPv4ConnectivityCheck()
+        private void IPv4ConnectivityCheck(object state)
         {
             if (_upnpDeviceStatus == UPnPDeviceStatus.Identifying)
                 _upnpDevice = null;
@@ -1453,6 +1437,9 @@ namespace MeshCore.Network.Connections
                                 else if (!WebUtilities.IsWebAccessible(null, _torProxy, WebClientExNetworkType.IPv4Only, 10000, false))
                                     newInternetStatus = InternetConnectivityStatus.NoTorInternetConnection;
 
+                                //try connectivity service to get dht peers
+                                CanAcceptIncomingConnection(_localServicePort, WebClientExNetworkType.IPv4Only, IPv4_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv4ConnectivityCheckExternalEP);
+
                                 _ipv4LocalLiveIP = null;
                                 _upnpExternalIP = null;
                                 _ipv4ConnectivityCheckExternalEP = null;
@@ -1521,7 +1508,7 @@ namespace MeshCore.Network.Connections
             }
         }
 
-        private void IPv6ConnectivityCheck()
+        private void IPv6ConnectivityCheck(object state)
         {
             if ((DateTime.UtcNow - _ipv6InternetStatusLastCheckedOn).TotalMilliseconds > CONNECTIVITY_RECHECK_TIMER_INTERVAL)
                 _ipv6InternetStatus = InternetConnectivityStatus.Identifying;
@@ -1616,9 +1603,11 @@ namespace MeshCore.Network.Connections
                                 else if (!WebUtilities.IsWebAccessible(null, _torProxy, WebClientExNetworkType.IPv6Only, 10000, false))
                                     newInternetStatus = InternetConnectivityStatus.NoTorInternetConnection;
 
-                                _ipv4LocalLiveIP = null;
-                                _upnpExternalIP = null;
-                                _ipv4ConnectivityCheckExternalEP = null;
+                                //try connectivity service to get dht peers
+                                CanAcceptIncomingConnection(_localServicePort, WebClientExNetworkType.IPv6Only, IPv6_CONNECTIVITY_CHECK_WEB_SERVICE, ref _ipv6ConnectivityCheckExternalEP);
+
+                                _ipv6LocalLiveIP = null;
+                                _ipv6ConnectivityCheckExternalEP = null;
                                 break;
 
                             default:
@@ -1657,15 +1646,15 @@ namespace MeshCore.Network.Connections
 
             try
             {
-                using (WebClientEx client = new WebClientEx())
+                using (WebClientEx wC = new WebClientEx())
                 {
-                    client.NetworkType = type;
-                    client.Proxy = _node.Proxy;
-                    client.QueryString.Add("port", externalPort.ToString());
-                    client.QueryString.Add("ts", DateTime.UtcNow.ToBinary().ToString());
-                    client.Timeout = 20000;
+                    wC.NetworkType = type;
+                    wC.Proxy = _node.Proxy;
+                    wC.QueryString.Add("port", externalPort.ToString());
+                    wC.QueryString.Add("ts", DateTime.UtcNow.ToBinary().ToString());
+                    wC.Timeout = 20000;
 
-                    using (BinaryReader bR = new BinaryReader(client.OpenRead(webServiceUrl)))
+                    using (BinaryReader bR = new BinaryReader(wC.OpenRead(webServiceUrl)))
                     {
                         switch (bR.ReadByte()) //version
                         {
@@ -1731,7 +1720,7 @@ namespace MeshCore.Network.Connections
         public InternetConnectivityStatus IPv6InternetStatus
         { get { return _ipv6InternetStatus; } }
 
-        public bool TorRunning
+        public bool IsTorRunning
         { get { return _torController.IsRunning; } }
 
         public EndPoint TorHiddenEndPoint
