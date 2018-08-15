@@ -120,6 +120,8 @@ namespace MeshCore
                 ThreadPool.GetMinThreads(out minWorker, out minIOC);
 
                 minWorker = Environment.ProcessorCount * 32;
+                minIOC = Environment.ProcessorCount * 16;
+
                 ThreadPool.SetMinThreads(minWorker, minIOC);
             }
         }
@@ -362,41 +364,35 @@ namespace MeshCore
 
             if (network == null)
             {
-                if (networkId.Equals(_maskedUserId))
-                {
-                    //private network connection invitation attempt
-                    if (!_allowInboundInvitations || (_allowOnlyLocalInboundInvitations && ((connection.RemotePeerEP.AddressFamily == AddressFamily.Unspecified) || !NetUtilities.IsPrivateIP((connection.RemotePeerEP as IPEndPoint).Address))))
-                    {
-                        channel.Dispose();
-                        return;
-                    }
-
-                    //accept invitation
-                    network = MeshNetwork.AcceptPrivateNetworkInvitation(_connectionManager, connection, channel);
-
-                    //add network
-                    lock (_networks)
-                    {
-                        _networks.Add(network.NetworkId, network);
-                    }
-
-                    //notify UI
-                    RaiseEventInvitationReceived(network);
-                }
-                else
+                if (!networkId.Equals(_maskedUserId))
                 {
                     //no network found
-                    channel.Dispose();
-                }
-            }
-            else
-            {
-                if (network.Status == MeshNetworkStatus.Offline)
-                {
                     channel.Dispose();
                     return;
                 }
 
+                //private network connection invitation attempt
+                if (!_allowInboundInvitations || (_allowOnlyLocalInboundInvitations && ((connection.RemotePeerEP.AddressFamily == AddressFamily.Unspecified) || !NetUtilities.IsPrivateIP((connection.RemotePeerEP as IPEndPoint).Address))))
+                {
+                    //not allowed
+                    channel.Dispose();
+                    return;
+                }
+
+                //accept invitation
+                network = MeshNetwork.AcceptPrivateNetworkInvitation(_connectionManager, connection, channel);
+
+                //add network
+                lock (_networks)
+                {
+                    _networks.Add(network.NetworkId, network);
+                }
+
+                //notify UI
+                RaiseEventInvitationReceived(network);
+            }
+            else
+            {
                 network.AcceptConnectionAndJoinNetwork(connection, channel);
             }
         }
@@ -430,7 +426,7 @@ namespace MeshCore
             }
         }
 
-        internal void DeleteMeshNetwork(MeshNetwork network)
+        internal void RemoveMeshNetwork(MeshNetwork network)
         {
             lock (_networks)
             {
@@ -894,8 +890,8 @@ namespace MeshCore
         public InternetConnectivityStatus IPv6InternetStatus
         { get { return _connectionManager.IPv6InternetStatus; } }
 
-        public bool TorRunning
-        { get { return _connectionManager.TorRunning; } }
+        public bool IsTorRunning
+        { get { return _connectionManager.IsTorRunning; } }
 
         public EndPoint TorHiddenEndPoint
         { get { return _connectionManager.TorHiddenEndPoint; } }
