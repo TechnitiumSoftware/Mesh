@@ -584,8 +584,8 @@ namespace MeshCore.Network.DHT
                         if ((Environment.OSVersion.Platform == PlatformID.Win32NT) && (Environment.OSVersion.Version.Major >= 6))
                         {
                             //windows vista & above
-                            _udpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
-                            _tcpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+                            _udpListener.DualMode = true;
+                            _tcpListener.DualMode = true;
                         }
                         break;
 
@@ -593,7 +593,7 @@ namespace MeshCore.Network.DHT
                         throw new NotSupportedException("Address family not supported.");
                 }
 
-                _udpListener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Broadcast, true);
+                _udpListener.EnableBroadcast = true;
                 _udpListener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
 
                 _udpListener.Bind(new IPEndPoint(_network.LocalIP, LOCAL_DISCOVERY_ANNOUNCE_PORT));
@@ -623,7 +623,7 @@ namespace MeshCore.Network.DHT
                 }
 
                 //start reading packets
-                _udpListenerThread = new Thread(RecvDataAsync);
+                _udpListenerThread = new Thread(ReceiveUdpPacketAsync);
                 _udpListenerThread.IsBackground = true;
                 _udpListenerThread.Start();
 
@@ -654,6 +654,12 @@ namespace MeshCore.Network.DHT
 
                 if (disposing)
                 {
+                    if (_udpListenerThread != null)
+                        _udpListenerThread.Abort();
+
+                    if (_tcpListenerThread != null)
+                        _tcpListenerThread.Abort();
+
                     if (_udpListener != null)
                         _udpListener.Dispose();
 
@@ -674,7 +680,7 @@ namespace MeshCore.Network.DHT
 
             #region private
 
-            private void RecvDataAsync(object parameter)
+            private void ReceiveUdpPacketAsync(object parameter)
             {
                 EndPoint remoteEP = null;
                 byte[] buffer = new byte[BUFFER_MAX_SIZE];
@@ -702,8 +708,26 @@ namespace MeshCore.Network.DHT
                 {
                     while (true)
                     {
-                        //receive message from remote
-                        bytesRecv = _udpListener.ReceiveFrom(buffer, ref remoteEP);
+                        try
+                        {
+                            //receive message from remote
+                            bytesRecv = _udpListener.ReceiveFrom(buffer, ref remoteEP);
+                        }
+                        catch (SocketException ex)
+                        {
+                            switch (ex.SocketErrorCode)
+                            {
+                                case SocketError.ConnectionReset:
+                                case SocketError.HostUnreachable:
+                                case SocketError.MessageSize:
+                                case SocketError.NetworkReset:
+                                    bytesRecv = 0;
+                                    break;
+
+                                default:
+                                    throw;
+                            }
+                        }
 
                         if (bytesRecv > 0)
                         {
@@ -735,6 +759,10 @@ namespace MeshCore.Network.DHT
                             }
                         }
                     }
+                }
+                catch (ThreadAbortException)
+                {
+                    //stopping
                 }
                 catch (Exception ex)
                 {
@@ -776,6 +804,10 @@ namespace MeshCore.Network.DHT
                             }
                         });
                     }
+                }
+                catch (ThreadAbortException)
+                {
+                    //stopping
                 }
                 catch (Exception ex)
                 {
