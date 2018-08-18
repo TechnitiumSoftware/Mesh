@@ -2013,7 +2013,16 @@ namespace MeshCore.Network
                 {
                     foreach (Session session in _sessions)
                     {
-                        session.SendMessage(data, offset, count);
+                        try
+                        {
+                            session.SendMessage(data, offset, count);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.Write(this.GetType().Name, ex);
+
+                            session.Disconnect();
+                        }
                     }
                 }
                 finally
@@ -3046,6 +3055,7 @@ namespace MeshCore.Network
                     catch (ThreadAbortException)
                     {
                         //stopping
+                        Dispose();
                     }
                     catch (Exception ex)
                     {
