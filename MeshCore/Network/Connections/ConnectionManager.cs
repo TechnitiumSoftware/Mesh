@@ -144,7 +144,7 @@ namespace MeshCore.Network.Connections
 
             IPEndPoint localEP;
 
-            if (_node.Type == MeshNodeType.Tor)
+            if (_node.Type == MeshNodeType.Anonymous)
             {
                 _tcpListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 localEP = new IPEndPoint(IPAddress.Loopback, _node.LocalServicePort);
@@ -164,7 +164,7 @@ namespace MeshCore.Network.Connections
                         {
                             //vista & above
                             _tcpListener = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
-                            _tcpListener.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+                            _tcpListener.DualMode = true;
                             localEP = new IPEndPoint(IPAddress.IPv6Any, _node.LocalServicePort);
                         }
                         break;
@@ -173,6 +173,7 @@ namespace MeshCore.Network.Connections
                         if (Socket.OSSupportsIPv6)
                         {
                             _tcpListener = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
+                            _tcpListener.DualMode = true;
                             localEP = new IPEndPoint(IPAddress.IPv6Any, _node.LocalServicePort);
                         }
                         else
@@ -211,7 +212,7 @@ namespace MeshCore.Network.Connections
             //tor proxy
             _torProxy = new NetProxy(new SocksClient(_torController.Socks5EndPoint));
 
-            if (_node.Type == MeshNodeType.Tor)
+            if (_node.Type == MeshNodeType.Anonymous)
             {
                 //if node type is tor then start tor in advance
                 _torController.Start();
@@ -222,7 +223,7 @@ namespace MeshCore.Network.Connections
             }
 
             //init dht node
-            _dhtManager = new DhtManager(_localServicePort, this, (_node.Type == MeshNodeType.Tor ? _torProxy : _node.Proxy), _node.IPv4BootstrapDhtNodes, _node.IPv6BootstrapDhtNodes, _node.TorBootstrapDhtNodes, _torHiddenServiceInfo?.ServiceId + ".onion", (_node.Type == MeshNodeType.Tor));
+            _dhtManager = new DhtManager(_localServicePort, this, (_node.Type == MeshNodeType.Anonymous ? _torProxy : _node.Proxy), _node.IPv4BootstrapDhtNodes, _node.IPv6BootstrapDhtNodes, _node.TorBootstrapDhtNodes, _torHiddenServiceInfo?.ServiceId + ".onion", (_node.Type == MeshNodeType.Anonymous));
 
             //start accepting connections
             _tcpListenerThread = new Thread(AcceptTcpConnectionAsync);
@@ -258,6 +259,8 @@ namespace MeshCore.Network.Connections
 
             if (disposing)
             {
+                _tcpListenerThread?.Abort();
+
                 //shutdown tcp listener
                 if (_tcpListener != null)
                     _tcpListener.Dispose();
@@ -301,7 +304,7 @@ namespace MeshCore.Network.Connections
 
             try
             {
-                if ((_node.Type == MeshNodeType.Tor) || (remoteNodeEP.AddressFamily == AddressFamily.Unspecified))
+                if ((_node.Type == MeshNodeType.Anonymous) || (remoteNodeEP.AddressFamily == AddressFamily.Unspecified))
                 {
                     if (!_torController.IsRunning)
                     {
@@ -392,6 +395,10 @@ namespace MeshCore.Network.Connections
                         }
                     });
                 }
+            }
+            catch (ThreadAbortException)
+            {
+                //stopping
             }
             catch (Exception ex)
             {
@@ -1062,6 +1069,7 @@ namespace MeshCore.Network.Connections
                             try
                             {
                                 Connection tcpRelayClientConnection = MakeConnection(state2 as IPEndPoint);
+                                bool added = false;
 
                                 lock (_ipv4TcpRelayClientConnections)
                                 {
@@ -1070,11 +1078,21 @@ namespace MeshCore.Network.Connections
                                         if (!_ipv4TcpRelayClientConnections.Contains(tcpRelayClientConnection))
                                         {
                                             _ipv4TcpRelayClientConnections.Add(tcpRelayClientConnection);
-                                            tcpRelayClientConnection.EnableTcpRelayClientMode();
-
-                                            Debug.Write(this.GetType().Name, "Tcp relay client connection added: " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
+                                            added = true;
                                         }
                                     }
+                                }
+
+                                if (added)
+                                {
+                                    Debug.Write(this.GetType().Name, "Tcp relay client connection added: " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
+
+                                    //enable tcp relay client mode on the connection
+                                    tcpRelayClientConnection.EnableTcpRelayClientMode();
+
+                                    //register all existing networks on the tcp rely server connection
+                                    foreach (MeshNetwork network in _node.GetNetworks())
+                                        tcpRelayClientConnection.TcpRelayRegisterHostedNetwork(network.NetworkId);
                                 }
                             }
                             catch (Exception ex)
@@ -1103,6 +1121,7 @@ namespace MeshCore.Network.Connections
                             try
                             {
                                 Connection tcpRelayClientConnection = MakeConnection(state2 as IPEndPoint);
+                                bool added = false;
 
                                 lock (_ipv6TcpRelayClientConnections)
                                 {
@@ -1111,11 +1130,21 @@ namespace MeshCore.Network.Connections
                                         if (!_ipv6TcpRelayClientConnections.Contains(tcpRelayClientConnection))
                                         {
                                             _ipv6TcpRelayClientConnections.Add(tcpRelayClientConnection);
-                                            tcpRelayClientConnection.EnableTcpRelayClientMode();
-
-                                            Debug.Write(this.GetType().Name, "Tcp relay client connection added: " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
+                                            added = true;
                                         }
                                     }
+                                }
+
+                                if (added)
+                                {
+                                    Debug.Write(this.GetType().Name, "Tcp relay client connection added: " + tcpRelayClientConnection.RemotePeerId + " [" + tcpRelayClientConnection.RemotePeerEP + "]");
+
+                                    //enable tcp relay client mode on the connection
+                                    tcpRelayClientConnection.EnableTcpRelayClientMode();
+
+                                    //register all existing networks on the tcp rely server connection
+                                    foreach (MeshNetwork network in _node.GetNetworks())
+                                        tcpRelayClientConnection.TcpRelayRegisterHostedNetwork(network.NetworkId);
                                 }
                             }
                             catch (Exception ex)
@@ -1280,7 +1309,7 @@ namespace MeshCore.Network.Connections
 
             try
             {
-                if (_node.Type == MeshNodeType.Tor)
+                if (_node.Type == MeshNodeType.Anonymous)
                 {
                     newInternetStatus = InternetConnectivityStatus.TorInternetConnection;
                     newUPnPDeviceStatus = UPnPDeviceStatus.Disabled;
@@ -1522,7 +1551,7 @@ namespace MeshCore.Network.Connections
 
             try
             {
-                if (_node.Type == MeshNodeType.Tor)
+                if (_node.Type == MeshNodeType.Anonymous)
                 {
                     newInternetStatus = InternetConnectivityStatus.TorInternetConnection;
                     return;
