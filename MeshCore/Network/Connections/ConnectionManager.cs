@@ -648,6 +648,38 @@ namespace MeshCore.Network.Connections
             }
         }
 
+        private bool IsSelfEndPoint(EndPoint remotePeerEP)
+        {
+            switch (remotePeerEP.AddressFamily)
+            {
+                case AddressFamily.InterNetwork:
+                    if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.Any))
+                        return true;
+
+                    if (remotePeerEP.Equals(this.IPv4ExternalEndPoint))
+                        return true;
+
+                    break;
+
+                case AddressFamily.InterNetworkV6:
+                    if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.IPv6Any))
+                        return true;
+
+                    if (remotePeerEP.Equals(this.IPv6ExternalEndPoint))
+                        return true;
+
+                    break;
+
+                case AddressFamily.Unspecified:
+                    if (remotePeerEP.Equals(this.TorHiddenEndPoint))
+                        return true;
+
+                    break;
+            }
+
+            return false;
+        }
+
         #endregion
 
         #region public
@@ -679,32 +711,8 @@ namespace MeshCore.Network.Connections
             try
             {
                 //check if self
-                switch (remotePeerEP.AddressFamily)
-                {
-                    case AddressFamily.InterNetwork:
-                        if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.Any))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        if (remotePeerEP.Equals(this.IPv4ExternalEndPoint))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        break;
-
-                    case AddressFamily.InterNetworkV6:
-                        if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.IPv6Any))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        if (remotePeerEP.Equals(this.IPv6ExternalEndPoint))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        break;
-
-                    case AddressFamily.Unspecified:
-                        if (remotePeerEP.Equals(this.TorHiddenEndPoint))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        break;
-                }
+                if (IsSelfEndPoint(remotePeerEP))
+                    throw new IOException("Cannot connect to remote port: self connection."); ;
 
                 //check existing connection
                 Connection existingConnection = GetExistingConnection(remotePeerEP);
@@ -766,32 +774,8 @@ namespace MeshCore.Network.Connections
             try
             {
                 //check if self
-                switch (remotePeerEP.AddressFamily)
-                {
-                    case AddressFamily.InterNetwork:
-                        if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.Any))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        if (remotePeerEP.Equals(this.IPv4ExternalEndPoint))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        break;
-
-                    case AddressFamily.InterNetworkV6:
-                        if ((remotePeerEP as IPEndPoint).Address.Equals(IPAddress.IPv6Any))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        if (remotePeerEP.Equals(this.IPv6ExternalEndPoint))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        break;
-
-                    case AddressFamily.Unspecified:
-                        if (remotePeerEP.Equals(this.TorHiddenEndPoint))
-                            throw new IOException("Cannot connect to remote port: self connection.");
-
-                        break;
-                }
+                if (IsSelfEndPoint(remotePeerEP))
+                    throw new IOException("Cannot connect to remote port: self connection."); ;
 
                 //check existing connection
                 Connection existingConnection = GetExistingConnection(remotePeerEP);
