@@ -252,14 +252,29 @@ namespace MeshCore.Network.Connections
 
                             if (connections.Length > 0)
                             {
+                                int count = connections.Length;
+
+                                for (int i = 0; i < connections.Length; i++)
+                                {
+                                    if (connections[i].RemotePeerEP.Equals(_remotePeerEP))
+                                    {
+                                        connections[i] = null;
+                                        count--;
+                                        break;
+                                    }
+                                }
+
                                 using (MemoryStream mS = new MemoryStream(128))
                                 {
                                     BinaryWriter bW = new BinaryWriter(mS);
 
-                                    bW.Write(Convert.ToByte(connections.Length));
+                                    bW.Write(Convert.ToByte(count));
 
                                     foreach (Connection connection in connections)
-                                        connection.RemotePeerEP.WriteTo(bW);
+                                    {
+                                        if (connection != null)
+                                            connection.RemotePeerEP.WriteTo(bW);
+                                    }
 
                                     byte[] data = mS.ToArray();
 
