@@ -112,6 +112,9 @@ namespace MeshCore.Network.Connections
 
                 if (disposing)
                 {
+                    if (_readThread != null)
+                        _readThread.Abort();
+
                     //dispose tcp relay mode timer
                     if (_tcpRelayClientModeTimer != null)
                         _tcpRelayClientModeTimer.Dispose();
@@ -468,6 +471,10 @@ namespace MeshCore.Network.Connections
                         dataStream.CopyTo(Stream.Null, 1024, Convert.ToInt32(dataStream.Length - dataStream.Position));
                 }
             }
+            catch (ThreadAbortException)
+            {
+                //stopping
+            }
             catch (Exception ex)
             {
                 Debug.Write(this.GetType().Name, ex);
@@ -651,7 +658,7 @@ namespace MeshCore.Network.Connections
         {
             #region variables
 
-            const int CHANNEL_READ_TIMEOUT = 60000; //channel read timeout; application must NOOP
+            const int CHANNEL_READ_TIMEOUT = 60000; //channel read timeout; application must PING to keep alive
             const int CHANNEL_WRITE_TIMEOUT = 30000; //dummy timeout for write since base channel write timeout will be used
 
             readonly Connection _connection;
