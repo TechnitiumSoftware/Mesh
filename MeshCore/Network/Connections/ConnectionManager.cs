@@ -276,16 +276,15 @@ namespace MeshCore.Network.Connections
                 if (_connectivityCheckTimer != null)
                     _connectivityCheckTimer.Dispose();
 
-                //stop channel services
-                List<Connection> connectionList = new List<Connection>();
+                //close all connections
+                List<Connection> connections = new List<Connection>();
 
                 lock (_connectionListByEndPoint)
                 {
-                    foreach (Connection connection in _connectionListByEndPoint.Values)
-                        connectionList.Add(connection);
+                    connections.AddRange(_connectionListByEndPoint.Values);
                 }
 
-                foreach (Connection connection in connectionList)
+                foreach (Connection connection in connections)
                     connection.Dispose();
             }
 
@@ -398,11 +397,12 @@ namespace MeshCore.Network.Connections
             }
             catch (ThreadAbortException)
             {
-                //stopping
+                //stopping, do nothing
             }
             catch (Exception ex)
             {
                 Debug.Write(this.GetType().Name, ex);
+                throw; //something wrong! quit mesh!
             }
         }
 
