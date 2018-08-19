@@ -67,7 +67,7 @@ namespace MeshCore.Network.DHT
 
             if (parentBucket._bucketID == null)
             {
-                _bucketID = new BinaryNumber(new byte[20]);
+                _bucketID = new BinaryNumber(new byte[32]);
 
                 if (left)
                     _bucketID.Value[0] = 0x80;
@@ -76,7 +76,7 @@ namespace MeshCore.Network.DHT
             {
                 if (left)
                 {
-                    _bucketID = new BinaryNumber(new byte[20]);
+                    _bucketID = new BinaryNumber(new byte[32]);
                     _bucketID.Value[0] = 0x80;
 
                     _bucketID = parentBucket._bucketID | (_bucketID >> (_bucketDepth - 1));
