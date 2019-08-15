@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -64,7 +64,7 @@ namespace MeshCore.Network.Connections
 
         readonly Dictionary<BinaryNumber, ChannelStream> _channels = new Dictionary<BinaryNumber, ChannelStream>();
 
-        readonly Thread _readThread;
+        Thread _readThread;
 
         readonly List<Joint> _tunnelJointList = new List<Joint>();
 
@@ -120,16 +120,16 @@ namespace MeshCore.Network.Connections
                         _tcpRelayClientModeTimer.Dispose();
 
                     //dispose all channels
-                    List<ChannelStream> streamList = new List<ChannelStream>();
+                    List<ChannelStream> channels = new List<ChannelStream>();
 
                     lock (_channels)
                     {
-                        foreach (KeyValuePair<BinaryNumber, ChannelStream> channel in _channels)
-                            streamList.Add(channel.Value);
+                        channels.AddRange(_channels.Values);
+                        _channels.Clear(); //clear to prevent sending disconnect signal from ChannelStream.Dispose()
                     }
 
-                    foreach (ChannelStream stream in streamList)
-                        stream.Dispose();
+                    foreach (ChannelStream channel in channels)
+                        channel.Dispose();
 
                     //dispose base stream
                     lock (_baseStream)
@@ -195,7 +195,7 @@ namespace MeshCore.Network.Connections
                     //read frame signal
                     signal = _baseStream.ReadByte();
                     if (signal == -1)
-                        return; //End of stream
+                        throw new EndOfStreamException();
 
                     //read channel id
                     _baseStream.ReadBytes(channelId.Value, 0, 32);
@@ -315,10 +315,9 @@ namespace MeshCore.Network.Connections
                                 lock (_channels)
                                 {
                                     channel = _channels[channelId];
-                                    _channels.Remove(channelId);
+                                    _channels.Remove(channelId); //remove here to prevent sending disconnect signal from ChannelStream.Dispose()
                                 }
 
-                                channel.SetDisconnected();
                                 channel.Dispose();
                             }
                             catch
@@ -370,15 +369,13 @@ namespace MeshCore.Network.Connections
                                             ChannelStream remoteChannel2 = remotePeerConnection.MakeVirtualConnection(_remotePeerEP);
 
                                             //join current and remote stream
-                                            Joint joint = new Joint(remoteChannel1, remoteChannel2);
-
-                                            joint.Disposed += delegate (object sender, EventArgs e)
+                                            Joint joint = new Joint(remoteChannel1, remoteChannel2, delegate (object state)
                                             {
                                                 lock (_tunnelJointList)
                                                 {
-                                                    _tunnelJointList.Remove(sender as Joint);
+                                                    _tunnelJointList.Remove(state as Joint);
                                                 }
-                                            };
+                                            });
 
                                             lock (_tunnelJointList)
                                             {
@@ -488,14 +485,19 @@ namespace MeshCore.Network.Connections
             }
             catch (ThreadAbortException)
             {
-                //stopping
+                //stopping, do nothing
+            }
+            catch (EndOfStreamException)
+            {
+                //gracefull close
+                _readThread = null; //to avoid self abort call in Dispose()
+                Dispose();
             }
             catch (Exception ex)
             {
                 Debug.Write(this.GetType().Name, ex);
-            }
-            finally
-            {
+
+                _readThread = null; //to avoid self abort call in Dispose()
                 Dispose();
             }
         }
@@ -686,8 +688,6 @@ namespace MeshCore.Network.Connections
             int _readTimeout = CHANNEL_READ_TIMEOUT;
             int _writeTimeout = CHANNEL_WRITE_TIMEOUT;
 
-            volatile bool _disconnected = false;
-
             #endregion
 
             #region constructor
@@ -702,7 +702,7 @@ namespace MeshCore.Network.Connections
 
             #region IDisposable
 
-            volatile bool _disposed = false;
+            bool _disposed = false;
 
             protected override void Dispose(bool disposing)
             {
@@ -713,13 +713,15 @@ namespace MeshCore.Network.Connections
 
                     if (disposing)
                     {
-                        if (!_disconnected)
-                        {
-                            lock (_connection._channels)
-                            {
-                                _connection._channels.Remove(_channelId);
-                            }
+                        bool removed;
 
+                        lock (_connection._channels)
+                        {
+                            removed = _connection._channels.Remove(_channelId);
+                        }
+
+                        if (removed)
+                        {
                             try
                             {
                                 //send disconnect signal
@@ -885,11 +887,6 @@ namespace MeshCore.Network.Connections
                         Monitor.Pulse(this);
                     }
                 }
-            }
-
-            internal void SetDisconnected()
-            {
-                _disconnected = true;
             }
 
             #endregion
