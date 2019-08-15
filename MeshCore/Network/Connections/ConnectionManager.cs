@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -116,7 +116,7 @@ namespace MeshCore.Network.Connections
         const int CONNECTIVITY_RECHECK_TIMER_INTERVAL = 45 * 60 * 1000; //recheck every 45 mins
         readonly Timer _connectivityCheckTimer;
 
-        readonly Uri IPv4_CONNECTIVITY_CHECK_WEB_SERVICE = new Uri("https://mesh.im/connectivity/check.aspx");
+        readonly Uri IPv4_CONNECTIVITY_CHECK_WEB_SERVICE = new Uri("https://ipv4.mesh.im/connectivity/");
         DateTime _ipv4InternetStatusLastCheckedOn;
         InternetConnectivityStatus _ipv4InternetStatus = InternetConnectivityStatus.Identifying;
         InternetGatewayDevice _upnpDevice;
@@ -125,7 +125,7 @@ namespace MeshCore.Network.Connections
         IPAddress _upnpExternalIP;
         EndPoint _ipv4ConnectivityCheckExternalEP;
 
-        readonly Uri IPv6_CONNECTIVITY_CHECK_WEB_SERVICE = new Uri("https://ipv6.mesh.im/connectivity/check.aspx");
+        readonly Uri IPv6_CONNECTIVITY_CHECK_WEB_SERVICE = new Uri("https://ipv6.mesh.im/connectivity/");
         DateTime _ipv6InternetStatusLastCheckedOn;
         InternetConnectivityStatus _ipv6InternetStatus = InternetConnectivityStatus.Identifying;
         IPAddress _ipv6LocalLiveIP;
@@ -216,7 +216,6 @@ namespace MeshCore.Network.Connections
             {
                 //if node type is tor then start tor in advance
                 _torController.Start();
-                _torController.AutoSwitchCircuit = true;
 
                 //start hidden service for incoming connections via tor
                 _torHiddenServiceInfo = _torController.CreateHiddenService(_localServicePort);
@@ -310,10 +309,7 @@ namespace MeshCore.Network.Connections
                         lock (_torController) //lock to prevent multiple start attempts
                         {
                             if (!_torController.IsRunning)
-                            {
                                 _torController.Start();
-                                _torController.AutoSwitchCircuit = true;
-                            }
                         }
                     }
 
