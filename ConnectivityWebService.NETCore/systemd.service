@@ -1,0 +1,17 @@
+[Unit]
+Description=Technitium Mesh Connectivity Web Service
+
+[Service]
+WorkingDirectory=/var/www/ipv4.mesh.im
+ExecStart=/usr/bin/dotnet /var/www/ipv4.mesh.im/ConnectivityWebService.NETCore.dll --server.urls http://localhost:8003/
+Restart=always
+# Restart service after 10 seconds if the dotnet service crashes:
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=dotnet-mesh
+User=www-data
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+[Install]
+WantedBy=multi-user.target

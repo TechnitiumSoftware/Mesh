@@ -1,17 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.27004.2009
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29123.88
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MeshCore", "MeshCore\MeshCore.csproj", "{76065E70-A175-49D7-861A-D68A7F4E3AAD}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeshApp", "MeshApp\MeshApp.csproj", "{68ED49DF-C976-4165-9314-EA15C4FAB1A3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutomaticUpdate.Client", "AutomaticUpdate.Client\AutomaticUpdate.Client.csproj", "{0BC4EAC6-4A90-4126-900D-AB5EB691C3FD}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutomaticUpdate.Update", "AutomaticUpdate.Update\AutomaticUpdate.Update.csproj", "{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectivityWebService", "ConnectivityWebService\ConnectivityWebService.csproj", "{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectivityWebService.NETCore", "ConnectivityWebService.NETCore\ConnectivityWebService.NETCore.csproj", "{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -27,18 +23,10 @@ Global
 		{68ED49DF-C976-4165-9314-EA15C4FAB1A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{68ED49DF-C976-4165-9314-EA15C4FAB1A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{68ED49DF-C976-4165-9314-EA15C4FAB1A3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{0BC4EAC6-4A90-4126-900D-AB5EB691C3FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{0BC4EAC6-4A90-4126-900D-AB5EB691C3FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{0BC4EAC6-4A90-4126-900D-AB5EB691C3FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{0BC4EAC6-4A90-4126-900D-AB5EB691C3FD}.Release|Any CPU.Build.0 = Release|Any CPU
-		{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1A335105-2DA8-4143-A8CB-66A2C6FC1F00}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6A8ECB09-5A4A-4C96-9D8C-D98579DA2A1F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
