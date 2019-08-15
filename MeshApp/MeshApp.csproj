@@ -1,0 +1,441 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{68ED49DF-C976-4165-9314-EA15C4FAB1A3}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>MeshApp</RootNamespace>
+    <AssemblyName>MeshApp</AssemblyName>
+    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
+    <IsWebBootstrapper>true</IsWebBootstrapper>
+    <PublishUrl>publish\</PublishUrl>
+    <Install>false</Install>
+    <InstallFrom>Web</InstallFrom>
+    <UpdateEnabled>true</UpdateEnabled>
+    <UpdateMode>Background</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <InstallUrl>http://bitchat.im/install/</InstallUrl>
+    <SupportUrl>http://bitchat.im</SupportUrl>
+    <ProductName>BitChat</ProductName>
+    <PublisherName>Technitium</PublisherName>
+    <CreateWebPageOnPublish>true</CreateWebPageOnPublish>
+    <WebPage>publish.htm</WebPage>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ApplicationVersion>1.0.0.0</ApplicationVersion>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <CreateDesktopShortcut>true</CreateDesktopShortcut>
+    <PublishWizardCompleted>true</PublishWizardCompleted>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>full</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <UseVSHostingProcess>false</UseVSHostingProcess>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject>MeshApp.Program</StartupObject>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>logo2.ico</ApplicationIcon>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ManifestCertificateThumbprint>E4A02E5E903DC4693A9DE1CD29F4AB7DD64A245B</ManifestCertificateThumbprint>
+  </PropertyGroup>
+  <PropertyGroup>
+    <GenerateManifests>false</GenerateManifests>
+  </PropertyGroup>
+  <PropertyGroup>
+    <SignManifests>false</SignManifests>
+  </PropertyGroup>
+  <PropertyGroup>
+    <TargetZone>Custom</TargetZone>
+  </PropertyGroup>
+  <PropertyGroup />
+  <PropertyGroup />
+  <PropertyGroup />
+  <PropertyGroup />
+  <PropertyGroup />
+  <PropertyGroup />
+  <PropertyGroup>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <Reference Include="TechnitiumLibrary.IO, Version=2.5.1.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.IO.dll</HintPath>
+    </Reference>
+    <Reference Include="TechnitiumLibrary.Net, Version=2.5.5.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.dll</HintPath>
+    </Reference>
+    <Reference Include="TechnitiumLibrary.Net.Firewall">
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.Firewall.dll</HintPath>
+    </Reference>
+    <Reference Include="TechnitiumLibrary.Net.Tor, Version=1.1.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.Tor.dll</HintPath>
+    </Reference>
+    <Reference Include="TechnitiumLibrary.Security.Cryptography, Version=2.2.4.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Security.Cryptography.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="frmAbout.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmAbout.Designer.cs">
+      <DependentUpon>frmAbout.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmAddGroupChat.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmAddGroupChat.Designer.cs">
+      <DependentUpon>frmAddGroupChat.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmCreateProfile.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmCreateProfile.Designer.cs">
+      <DependentUpon>frmCreateProfile.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmEditProfile.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmEditProfile.Designer.cs">
+      <DependentUpon>frmEditProfile.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmImageDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmImageDialog.Designer.cs">
+      <DependentUpon>frmImageDialog.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmImportPEM.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmImportPEM.Designer.cs">
+      <DependentUpon>frmImportPEM.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmMessageInfo.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmMessageInfo.Designer.cs">
+      <DependentUpon>frmMessageInfo.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmNetworkInfo.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmNetworkInfo.Designer.cs">
+      <DependentUpon>frmNetworkInfo.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmProfileManager.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmProfileManager.Designer.cs">
+      <DependentUpon>frmProfileManager.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmForwardToNetwork.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmForwardToNetwork.Designer.cs">
+      <DependentUpon>frmForwardToNetwork.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmViewGroup.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmViewGroup.Designer.cs">
+      <DependentUpon>frmViewGroup.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmViewProfile.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmViewProfile.Designer.cs">
+      <DependentUpon>frmViewProfile.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmProxyConfig.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmProxyConfig.Designer.cs">
+      <DependentUpon>frmProxyConfig.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmViewUserDetails.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmViewUserDetails.Designer.cs">
+      <DependentUpon>frmViewUserDetails.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\ChatListItem.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\ChatListItem.Designer.cs">
+      <DependentUpon>ChatListItem.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\ChatMessageInfoItem.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\ChatMessageInfoItem.Designer.cs">
+      <DependentUpon>ChatMessageInfoItem.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\ChatMessageTextItem.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\ChatMessageTextItem.Designer.cs">
+      <DependentUpon>ChatMessageTextItem.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\ChatMessageView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\ChatMessageView.Designer.cs">
+      <DependentUpon>ChatMessageView.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\CustomButton.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="UserControls\CustomListView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\CustomListView.Designer.cs">
+      <DependentUpon>CustomListView.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\MeshNetworkPanel.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\MeshNetworkPanel.Designer.cs">
+      <DependentUpon>MeshNetworkPanel.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\CustomListViewItem.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\CustomListViewItem.Designer.cs">
+      <DependentUpon>CustomListViewItem.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmChatProperties.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmChatProperties.Designer.cs">
+      <DependentUpon>frmChatProperties.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmMain.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmMain.Designer.cs">
+      <DependentUpon>frmMain.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmAddPrivateChat.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmAddPrivateChat.Designer.cs">
+      <DependentUpon>frmAddPrivateChat.cs</DependentUpon>
+    </Compile>
+    <Compile Include="frmSettings.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="frmSettings.Designer.cs">
+      <DependentUpon>frmSettings.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="UserControls\CustomPanel.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\CustomPanel.Designer.cs">
+      <DependentUpon>CustomPanel.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\IChatMessageItem.cs" />
+    <Compile Include="UserControls\ChatMessageFileItem.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\ChatMessageFileItem.Designer.cs">
+      <DependentUpon>ChatMessageFileItem.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\UserListItem.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\UserListItem.Designer.cs">
+      <DependentUpon>UserListItem.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\CustomListViewPanel.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\CustomListViewPanel.Designer.cs">
+      <DependentUpon>CustomListViewPanel.cs</DependentUpon>
+    </Compile>
+    <EmbeddedResource Include="frmAbout.resx">
+      <DependentUpon>frmAbout.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmAddGroupChat.resx">
+      <DependentUpon>frmAddGroupChat.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmCreateProfile.resx">
+      <DependentUpon>frmCreateProfile.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmEditProfile.resx">
+      <DependentUpon>frmEditProfile.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmImageDialog.resx">
+      <DependentUpon>frmImageDialog.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmImportPEM.resx">
+      <DependentUpon>frmImportPEM.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmMessageInfo.resx">
+      <DependentUpon>frmMessageInfo.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmNetworkInfo.resx">
+      <DependentUpon>frmNetworkInfo.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmProfileManager.resx">
+      <DependentUpon>frmProfileManager.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmForwardToNetwork.resx">
+      <DependentUpon>frmForwardToNetwork.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmViewGroup.resx">
+      <DependentUpon>frmViewGroup.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmViewProfile.resx">
+      <DependentUpon>frmViewProfile.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmProxyConfig.resx">
+      <DependentUpon>frmProxyConfig.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmViewUserDetails.resx">
+      <DependentUpon>frmViewUserDetails.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\ChatListItem.resx">
+      <DependentUpon>ChatListItem.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\ChatMessageFileItem.resx">
+      <DependentUpon>ChatMessageFileItem.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\ChatMessageInfoItem.resx">
+      <DependentUpon>ChatMessageInfoItem.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\ChatMessageTextItem.resx">
+      <DependentUpon>ChatMessageTextItem.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\ChatMessageView.resx">
+      <DependentUpon>ChatMessageView.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\CustomListView.resx">
+      <DependentUpon>CustomListView.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\MeshNetworkPanel.resx">
+      <DependentUpon>MeshNetworkPanel.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\CustomListViewItem.resx">
+      <DependentUpon>CustomListViewItem.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmChatProperties.resx">
+      <DependentUpon>frmChatProperties.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmMain.resx">
+      <DependentUpon>frmMain.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmAddPrivateChat.resx">
+      <DependentUpon>frmAddPrivateChat.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="frmSettings.resx">
+      <DependentUpon>frmSettings.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+      <DesignTime>True</DesignTime>
+    </Compile>
+    <EmbeddedResource Include="UserControls\CustomPanel.resx">
+      <DependentUpon>CustomPanel.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\UserListItem.resx">
+      <DependentUpon>UserListItem.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\CustomListViewPanel.resx">
+      <DependentUpon>CustomListViewPanel.cs</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="logo2.ico" />
+    <None Include="app.config" />
+    <None Include="app.manifest" />
+    <None Include="Resources\message-failed.png" />
+    <None Include="Resources\change-photo.png" />
+    <None Include="Resources\waiting.png" />
+    <None Include="Resources\single-tick.png" />
+    <None Include="Resources\double-ticks.png" />
+    <None Include="Resources\point-left.png" />
+    <None Include="Resources\point-right.png" />
+    <None Include="Resources\send message.png" />
+    <None Include="Resources\Attachment.png" />
+    <None Include="Resources\MessageNotification.wav" />
+    <None Include="Resources\NoNetwork.png" />
+    <None Include="Resources\FullNetwork.png" />
+    <None Include="Resources\PartialNetwork.png" />
+    <None Include="Resources\logo2.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include=".NETFramework,Version=v4.0">
+      <Visible>False</Visible>
+      <ProductName>Microsoft .NET Framework 4 %28x86 and x64%29</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Windows.Installer.4.5">
+      <Visible>False</Visible>
+      <ProductName>Windows Installer 4.5</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MeshCore\MeshCore.csproj">
+      <Project>{76065e70-a175-49d7-861a-d68a7f4e3aad}</Project>
+      <Name>MeshCore</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
