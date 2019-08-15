@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -280,29 +280,29 @@ namespace MeshCore.Network
                         _dhtAnnounceTimer.Dispose();
 
                     //dispose all peers
-                    if (_peersLock != null)
+                    if (_type == MeshNetworkType.Private)
                     {
-                        _peersLock.EnterWriteLock();
+                        if (_selfPeer != null)
+                            _selfPeer.Dispose();
+
+                        if (_otherPeer != null)
+                            _otherPeer.Dispose();
+                    }
+                    else if (_peersLock != null)
+                    {
+                        _peersLock.EnterReadLock();
                         try
                         {
                             foreach (KeyValuePair<BinaryNumber, Peer> peer in _peers)
                                 peer.Value.Dispose();
-
-                            _peers.Clear();
                         }
                         finally
                         {
-                            _peersLock.ExitWriteLock();
+                            _peersLock.ExitReadLock();
                         }
 
                         _peersLock.Dispose();
                     }
-
-                    if (_selfPeer != null)
-                        _selfPeer.Dispose();
-
-                    if (_otherPeer != null)
-                        _otherPeer.Dispose();
 
                     //close message store
                     if (_store != null)
@@ -1325,8 +1325,8 @@ namespace MeshCore.Network
                     //disconnect all peers
                     if (_type == MeshNetworkType.Private)
                     {
-                        _selfPeer.Disconnect();
-                        _otherPeer.Disconnect();
+                        _selfPeer.DisposeAllSessions();
+                        _otherPeer.DisposeAllSessions();
                     }
                     else
                     {
@@ -1334,7 +1334,7 @@ namespace MeshCore.Network
                         try
                         {
                             foreach (KeyValuePair<BinaryNumber, Peer> peer in _peers)
-                                peer.Value.Disconnect();
+                                peer.Value.DisposeAllSessions();
                         }
                         finally
                         {
@@ -1930,7 +1930,6 @@ namespace MeshCore.Network
                 Dispose(true);
             }
 
-            bool _isDisposing = false;
             bool _disposed = false;
 
             protected virtual void Dispose(bool disposing)
@@ -1940,20 +1939,7 @@ namespace MeshCore.Network
 
                 if (disposing)
                 {
-                    _isDisposing = true;
-
-                    _sessionsLock.EnterWriteLock();
-                    try
-                    {
-                        foreach (Session session in _sessions)
-                            session.Dispose();
-
-                        _sessions.Clear();
-                    }
-                    finally
-                    {
-                        _sessionsLock.ExitWriteLock();
-                    }
+                    DisposeAllSessions();
 
                     _sessionsLock.Dispose();
                 }
@@ -1996,7 +1982,7 @@ namespace MeshCore.Network
 
             private void RaiseEventConnectivityStatusChanged()
             {
-                _network._connectionManager.Node.SynchronizationContext.Send(delegate (object state)
+                _network._connectionManager.Node.SynchronizationContext.Post(delegate (object state)
                 {
                     ConnectivityStatusChanged?.Invoke(this, EventArgs.Empty);
                 }, null);
@@ -2020,8 +2006,6 @@ namespace MeshCore.Network
                         catch (Exception ex)
                         {
                             Debug.Write(this.GetType().Name, ex);
-
-                            session.Disconnect();
                         }
                     }
                 }
@@ -2088,21 +2072,23 @@ namespace MeshCore.Network
 
             private void RemoveSession(Session session)
             {
-                if (!_isDisposing)
+                bool removed;
+
+                //remove this session from peer
+                _sessionsLock.EnterWriteLock();
+                try
                 {
-                    //remove this session from peer
-                    _sessionsLock.EnterWriteLock();
-                    try
-                    {
-                        _sessions.Remove(session);
+                    removed = _sessions.Remove(session);
 
-                        _isOnline = (_sessions.Count > 0);
-                    }
-                    finally
-                    {
-                        _sessionsLock.ExitWriteLock();
-                    }
+                    _isOnline = (_sessions.Count > 0);
+                }
+                finally
+                {
+                    _sessionsLock.ExitWriteLock();
+                }
 
+                if (removed)
+                {
                     if (!_isOnline)
                     {
                         _connectivityStatus = PeerConnectivityStatus.NoNetwork;
@@ -2110,13 +2096,19 @@ namespace MeshCore.Network
                         RaiseEventStateChanged(); //notify UI that peer is offline
                     }
 
-                    //peer exchange
-                    _network.UpdateConnectivityStatus();
-                    _network.DoPeerExchange();
+                    lock (_network)
+                    {
+                        if (_network._disposed)
+                            return;
 
-                    //reset dht timer since network might be unstable
-                    _network._dhtTimerInterval = DHT_ANNOUNCE_TIMER_INITIAL_INTERVAL;
-                    _network._dhtAnnounceTimer.Change(_network._dhtTimerInterval, Timeout.Infinite);
+                        //peer exchange
+                        _network.UpdateConnectivityStatus();
+                        _network.DoPeerExchange();
+
+                        //reset dht timer since network might be unstable
+                        _network._dhtTimerInterval = DHT_ANNOUNCE_TIMER_INITIAL_INTERVAL;
+                        _network._dhtAnnounceTimer.Change(_network._dhtTimerInterval, Timeout.Infinite);
+                    }
                 }
             }
 
@@ -2129,17 +2121,31 @@ namespace MeshCore.Network
                 }
             }
 
-            internal void Disconnect()
+            internal void DisposeAllSessions()
             {
-                _sessionsLock.EnterReadLock();
+                List<Session> sessions = new List<Session>();
+
+                _sessionsLock.EnterWriteLock();
                 try
                 {
-                    foreach (Session session in _sessions)
-                        session.Disconnect();
+                    sessions.AddRange(_sessions);
+                    _sessions.Clear(); //clear to prevent UI notifications and peer exchange & DHT trigger
+                    _isOnline = false;
                 }
                 finally
                 {
-                    _sessionsLock.ExitReadLock();
+                    _sessionsLock.ExitWriteLock();
+                }
+
+                if (sessions.Count > 0)
+                {
+                    foreach (Session session in sessions)
+                        session.Dispose();
+
+                    _isOnline = false;
+                    _connectivityStatus = PeerConnectivityStatus.NoNetwork;
+
+                    RaiseEventStateChanged(); //notify UI that peer is offline
                 }
             }
 
@@ -2630,7 +2636,7 @@ namespace MeshCore.Network
                 readonly SecureChannelStream _channel;
                 readonly Connection _connection;
 
-                readonly Thread _readThread;
+                Thread _readThread;
 
                 MeshNetworkPacketPeerExchange _peerExchange; //saved info for getting connected peers for connectivity status
 
@@ -2666,7 +2672,6 @@ namespace MeshCore.Network
                     Dispose(true);
                 }
 
-                bool _isDisposing = false;
                 bool _disposed = false;
 
                 protected virtual void Dispose(bool disposing)
@@ -2678,29 +2683,25 @@ namespace MeshCore.Network
 
                         if (disposing)
                         {
-                            _isDisposing = true;
-
                             _readThread?.Abort();
 
                             //close all data streams
+                            List<DataStream> dataStreams = new List<DataStream>();
+
                             lock (_dataStreams)
                             {
-                                foreach (KeyValuePair<ushort, DataStream> dataStream in _dataStreams)
-                                    dataStream.Value.Dispose();
-
-                                _dataStreams.Clear();
+                                dataStreams.AddRange(_dataStreams.Values);
+                                _dataStreams.Clear(); //clear to prevent sending EOF packet from DataStream.Dispose()
                             }
+
+                            foreach (DataStream dataStream in dataStreams)
+                                dataStream.Dispose();
 
                             //close base secure channel
                             _channel?.Dispose();
 
-                            //remove session
-                            try
-                            {
-                                _peer.RemoveSession(this);
-                            }
-                            catch
-                            { }
+                            //remove session from peer
+                            _peer.RemoveSession(this);
                         }
 
                         _disposed = true;
@@ -3045,22 +3046,29 @@ namespace MeshCore.Network
                     catch (SecureChannelException ex)
                     {
                         _peer._network.SendSecureChannelFailedInfoMessage(ex);
+
+                        _readThread = null; //to avoid self abort call in Dispose()
                         Dispose();
                     }
                     catch (EndOfStreamException)
                     {
                         //gracefull secure channel disconnection done
+                        _readThread = null; //to avoid self abort call in Dispose()
                         Dispose();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        //do nothing
                     }
                     catch (ThreadAbortException)
                     {
-                        //stopping
-                        Dispose();
+                        //stopping, do nothing
                     }
                     catch (Exception ex)
                     {
                         Debug.Write(this.GetType().Name, ex);
 
+                        _readThread = null; //to avoid self abort call in Dispose()
                         Dispose();
 
                         //try reconnection due to unexpected channel closure (mostly read timed out exception)
@@ -3143,18 +3151,6 @@ namespace MeshCore.Network
                     return dS;
                 }
 
-                public void Disconnect()
-                {
-                    try
-                    {
-                        _channel.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.Write(this.GetType().Name, ex);
-                    }
-                }
-
                 public ICollection<MeshNetworkPeerInfo> GetConnectedPeerList()
                 {
                     if (_peerExchange == null)
@@ -3206,7 +3202,7 @@ namespace MeshCore.Network
 
                     #region IDisposable
 
-                    volatile bool _disposed = false;
+                    bool _disposed = false;
 
                     protected override void Dispose(bool disposing)
                     {
@@ -3217,20 +3213,22 @@ namespace MeshCore.Network
 
                             if (disposing)
                             {
-                                try
+                                bool removed;
+
+                                lock (_session._dataStreams)
                                 {
-                                    _session.WriteDataPacket(_port, new byte[] { }, 0, 0);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Debug.Write(this.GetType().Name, ex);
+                                    removed = _session._dataStreams.Remove(_port);
                                 }
 
-                                if (!_session._isDisposing)
+                                if (removed)
                                 {
-                                    lock (_session._dataStreams)
+                                    try
                                     {
-                                        _session._dataStreams.Remove(_port);
+                                        _session.WriteDataPacket(_port, new byte[] { }, 0, 0);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.Write(this.GetType().Name, ex);
                                     }
                                 }
 
