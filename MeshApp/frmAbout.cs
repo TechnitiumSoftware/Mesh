@@ -32,7 +32,7 @@ namespace MeshApp
 
         private void lnkTerms_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            System.Diagnostics.Process.Start(@"http://go.technitium.com/?id=3");
+            System.Diagnostics.Process.Start(@"http://go.technitium.com/?id=31");
         }
 
         private void lnkContactEmail_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
