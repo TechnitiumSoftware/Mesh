@@ -51,6 +51,7 @@
             this.mnuExit = new System.Windows.Forms.ToolStripMenuItem();
             this.iconSystemTray = new System.Windows.Forms.NotifyIcon(this.components);
             this.label1 = new System.Windows.Forms.Label();
+            this.mnuCheckUpdate = new System.Windows.Forms.ToolStripMenuItem();
             this.mnuSystemTray.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -180,49 +181,50 @@
             this.mnuProfileManager,
             this.mnuSeparator,
             this.toolStripSeparator3,
+            this.mnuCheckUpdate,
             this.mnuAbout,
             this.toolStripSeparator5,
             this.mnuExit});
             this.mnuSystemTray.Name = "systrayMenu";
-            this.mnuSystemTray.Size = new System.Drawing.Size(164, 88);
+            this.mnuSystemTray.Size = new System.Drawing.Size(181, 132);
             this.mnuSystemTray.Opening += new System.ComponentModel.CancelEventHandler(this.mnuSystemTray_Opening);
             // 
             // mnuProfileManager
             // 
             this.mnuProfileManager.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
             this.mnuProfileManager.Name = "mnuProfileManager";
-            this.mnuProfileManager.Size = new System.Drawing.Size(163, 22);
+            this.mnuProfileManager.Size = new System.Drawing.Size(180, 22);
             this.mnuProfileManager.Text = "Profile Manager";
             this.mnuProfileManager.Click += new System.EventHandler(this.mnuProfileManager_Click);
             // 
             // mnuSeparator
             // 
             this.mnuSeparator.Name = "mnuSeparator";
-            this.mnuSeparator.Size = new System.Drawing.Size(160, 6);
+            this.mnuSeparator.Size = new System.Drawing.Size(177, 6);
             this.mnuSeparator.Visible = false;
             // 
             // toolStripSeparator3
             // 
             this.toolStripSeparator3.Name = "toolStripSeparator3";
-            this.toolStripSeparator3.Size = new System.Drawing.Size(160, 6);
+            this.toolStripSeparator3.Size = new System.Drawing.Size(177, 6);
             // 
             // mnuAbout
             // 
             this.mnuAbout.Image = global::MeshApp.Properties.Resources.logo2;
             this.mnuAbout.Name = "mnuAbout";
-            this.mnuAbout.Size = new System.Drawing.Size(163, 22);
+            this.mnuAbout.Size = new System.Drawing.Size(180, 22);
             this.mnuAbout.Text = "&About Mesh";
             this.mnuAbout.Click += new System.EventHandler(this.mnuAbout_Click);
             // 
             // toolStripSeparator5
             // 
             this.toolStripSeparator5.Name = "toolStripSeparator5";
-            this.toolStripSeparator5.Size = new System.Drawing.Size(160, 6);
+            this.toolStripSeparator5.Size = new System.Drawing.Size(177, 6);
             // 
             // mnuExit
             // 
             this.mnuExit.Name = "mnuExit";
-            this.mnuExit.Size = new System.Drawing.Size(163, 22);
+            this.mnuExit.Size = new System.Drawing.Size(180, 22);
             this.mnuExit.Text = "E&xit";
             this.mnuExit.Click += new System.EventHandler(this.mnuExit_Click);
             // 
@@ -245,6 +247,13 @@
             this.label1.TabIndex = 13;
             this.label1.Text = "A secure, anonymous, peer-to-peer, instant messenger with end-to-end encryption!";
             this.label1.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
+            // 
+            // mnuCheckUpdate
+            // 
+            this.mnuCheckUpdate.Name = "mnuCheckUpdate";
+            this.mnuCheckUpdate.Size = new System.Drawing.Size(180, 22);
+            this.mnuCheckUpdate.Text = "Check For &Update";
+            this.mnuCheckUpdate.Click += new System.EventHandler(this.mnuCheckUpdate_Click);
             // 
             // frmProfileManager
             // 
@@ -306,5 +315,6 @@
         private System.Windows.Forms.NotifyIcon iconSystemTray;
         private System.Windows.Forms.ToolStripSeparator mnuSeparator;
         private System.Windows.Forms.Label label1;
+        private System.Windows.Forms.ToolStripMenuItem mnuCheckUpdate;
     }
 }

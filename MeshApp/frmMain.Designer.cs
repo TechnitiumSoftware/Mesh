@@ -60,6 +60,7 @@ namespace MeshApp
             this.mnuMyProfile = new System.Windows.Forms.ToolStripMenuItem();
             this.mnuNetworkInfo = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator7 = new System.Windows.Forms.ToolStripSeparator();
+            this.mnuCheckUpdate = new System.Windows.Forms.ToolStripMenuItem();
             this.mnuAboutMesh = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
             this.mnuProfileManager = new System.Windows.Forms.ToolStripMenuItem();
@@ -316,19 +317,19 @@ namespace MeshApp
             // 
             this.mnuAddGroupChat1.Font = new System.Drawing.Font("Segoe UI", 9F);
             this.mnuAddGroupChat1.Name = "mnuAddGroupChat1";
-            this.mnuAddGroupChat1.Size = new System.Drawing.Size(163, 22);
+            this.mnuAddGroupChat1.Size = new System.Drawing.Size(180, 22);
             this.mnuAddGroupChat1.Text = "Add &Group Chat";
             this.mnuAddGroupChat1.Click += new System.EventHandler(this.mnuAddGroupChat_Click);
             // 
             // toolStripSeparator4
             // 
             this.toolStripSeparator4.Name = "toolStripSeparator4";
-            this.toolStripSeparator4.Size = new System.Drawing.Size(160, 6);
+            this.toolStripSeparator4.Size = new System.Drawing.Size(177, 6);
             // 
             // mnuProfileSettings
             // 
             this.mnuProfileSettings.Name = "mnuProfileSettings";
-            this.mnuProfileSettings.Size = new System.Drawing.Size(163, 22);
+            this.mnuProfileSettings.Size = new System.Drawing.Size(180, 22);
             this.mnuProfileSettings.Text = "Profile &Settings";
             this.mnuProfileSettings.Click += new System.EventHandler(this.mnuProfileSettings_Click);
             // 
@@ -342,6 +343,7 @@ namespace MeshApp
             this.mnuProfileSettings,
             this.mnuNetworkInfo,
             this.toolStripSeparator7,
+            this.mnuCheckUpdate,
             this.mnuAboutMesh,
             this.toolStripSeparator5,
             this.mnuProfileManager,
@@ -350,78 +352,85 @@ namespace MeshApp
             this.mnuCloseWindow,
             this.mnuLogout});
             this.mnuPlus.Name = "addChatContextMenu";
-            this.mnuPlus.Size = new System.Drawing.Size(164, 248);
+            this.mnuPlus.Size = new System.Drawing.Size(181, 292);
             // 
             // mnuAddPrivateChat1
             // 
             this.mnuAddPrivateChat1.Font = new System.Drawing.Font("Segoe UI", 9F);
             this.mnuAddPrivateChat1.Name = "mnuAddPrivateChat1";
-            this.mnuAddPrivateChat1.Size = new System.Drawing.Size(163, 22);
+            this.mnuAddPrivateChat1.Size = new System.Drawing.Size(180, 22);
             this.mnuAddPrivateChat1.Text = "Add &Private Chat";
             this.mnuAddPrivateChat1.Click += new System.EventHandler(this.mnuAddPrivateChat_Click);
             // 
             // mnuMyProfile
             // 
             this.mnuMyProfile.Name = "mnuMyProfile";
-            this.mnuMyProfile.Size = new System.Drawing.Size(163, 22);
+            this.mnuMyProfile.Size = new System.Drawing.Size(180, 22);
             this.mnuMyProfile.Text = "&My Profile";
             this.mnuMyProfile.Click += new System.EventHandler(this.mnuMyProfile_Click);
             // 
             // mnuNetworkInfo
             // 
             this.mnuNetworkInfo.Name = "mnuNetworkInfo";
-            this.mnuNetworkInfo.Size = new System.Drawing.Size(163, 22);
+            this.mnuNetworkInfo.Size = new System.Drawing.Size(180, 22);
             this.mnuNetworkInfo.Text = "Network &Info";
             this.mnuNetworkInfo.Click += new System.EventHandler(this.mnuNetworkInfo_Click);
             // 
             // toolStripSeparator7
             // 
             this.toolStripSeparator7.Name = "toolStripSeparator7";
-            this.toolStripSeparator7.Size = new System.Drawing.Size(160, 6);
+            this.toolStripSeparator7.Size = new System.Drawing.Size(177, 6);
+            // 
+            // mnuCheckUpdate
+            // 
+            this.mnuCheckUpdate.Name = "mnuCheckUpdate";
+            this.mnuCheckUpdate.Size = new System.Drawing.Size(180, 22);
+            this.mnuCheckUpdate.Text = "Check For &Update";
+            this.mnuCheckUpdate.Click += new System.EventHandler(this.mnuCheckUpdate_Click);
             // 
             // mnuAboutMesh
             // 
             this.mnuAboutMesh.Image = global::MeshApp.Properties.Resources.logo2;
             this.mnuAboutMesh.Name = "mnuAboutMesh";
-            this.mnuAboutMesh.Size = new System.Drawing.Size(163, 22);
+            this.mnuAboutMesh.Size = new System.Drawing.Size(180, 22);
             this.mnuAboutMesh.Text = "&About Mesh";
             this.mnuAboutMesh.Click += new System.EventHandler(this.mnuAboutMesh_Click);
             // 
             // toolStripSeparator5
             // 
             this.toolStripSeparator5.Name = "toolStripSeparator5";
-            this.toolStripSeparator5.Size = new System.Drawing.Size(160, 6);
+            this.toolStripSeparator5.Size = new System.Drawing.Size(177, 6);
             // 
             // mnuProfileManager
             // 
             this.mnuProfileManager.Name = "mnuProfileManager";
-            this.mnuProfileManager.Size = new System.Drawing.Size(163, 22);
+            this.mnuProfileManager.Size = new System.Drawing.Size(180, 22);
             this.mnuProfileManager.Text = "P&rofile Manager";
             this.mnuProfileManager.Click += new System.EventHandler(this.mnuProfileManager_Click);
             // 
             // mnuExit
             // 
             this.mnuExit.Name = "mnuExit";
-            this.mnuExit.Size = new System.Drawing.Size(163, 22);
+            this.mnuExit.Size = new System.Drawing.Size(180, 22);
             this.mnuExit.Text = "E&xit";
             this.mnuExit.Click += new System.EventHandler(this.mnuExit_Click);
             // 
             // toolStripSeparator3
             // 
             this.toolStripSeparator3.Name = "toolStripSeparator3";
-            this.toolStripSeparator3.Size = new System.Drawing.Size(160, 6);
+            this.toolStripSeparator3.Size = new System.Drawing.Size(177, 6);
             // 
             // mnuCloseWindow
             // 
             this.mnuCloseWindow.Name = "mnuCloseWindow";
-            this.mnuCloseWindow.Size = new System.Drawing.Size(163, 22);
+            this.mnuCloseWindow.Size = new System.Drawing.Size(180, 22);
             this.mnuCloseWindow.Text = "&Close Window";
             this.mnuCloseWindow.Click += new System.EventHandler(this.mnuCloseWindow_Click);
             // 
             // mnuLogout
             // 
             this.mnuLogout.Name = "mnuLogout";
-            this.mnuLogout.Size = new System.Drawing.Size(163, 22);
+            this.mnuLogout.Size = new System.Drawing.Size(180, 22);
             this.mnuLogout.Text = "&Logout";
             this.mnuLogout.Click += new System.EventHandler(this.mnuLogout_Click);
             // 
@@ -496,6 +505,7 @@ namespace MeshApp
         private System.Windows.Forms.ToolStripMenuItem mnuAboutMesh;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator5;
         private System.Windows.Forms.ToolStripMenuItem mnuLockGroup;
+        private System.Windows.Forms.ToolStripMenuItem mnuCheckUpdate;
     }
 }
 

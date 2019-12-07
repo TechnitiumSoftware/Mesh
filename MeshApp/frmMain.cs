@@ -40,6 +40,7 @@ namespace MeshApp
         readonly MeshNode _node;
         readonly string _profileFilePath;
         readonly bool _isPortableApp;
+        readonly MeshUpdate _meshUpdate;
         readonly frmProfileManager _profileManager;
 
         readonly SoundPlayer _sndMessageNotification = new SoundPlayer(Properties.Resources.MessageNotification);
@@ -53,19 +54,24 @@ namespace MeshApp
 
         #region constructor
 
-        public frmMain(MeshNode node, string profileFilePath, bool isPortableApp, frmProfileManager profileManager)
+        public frmMain(MeshNode node, string profileFilePath, bool isPortableApp, MeshUpdate meshUpdate, frmProfileManager profileManager)
         {
             InitializeComponent();
 
             _node = node;
             _profileFilePath = profileFilePath;
             _isPortableApp = isPortableApp;
+            _meshUpdate = meshUpdate;
             _profileManager = profileManager;
 
             _node.InvitationReceived += MeshNode_InvitationReceived;
 
             if (_node.Type == MeshNodeType.Anonymous)
                 this.Text += " [Anonymous]";
+
+            _meshUpdate.UpdateAvailable += meshUpdate_UpdateAvailable;
+            _meshUpdate.NoUpdateAvailable += meshUpdate_NoUpdateAvailable;
+            _meshUpdate.UpdateCheckFailed += meshUpdate_UpdateCheckFailed;
         }
 
         #endregion
@@ -112,8 +118,6 @@ namespace MeshApp
             _networkStatusCheckTimer.Interval = 10000;
             _networkStatusCheckTimer.Tick += networkStatusCheckTimer_Tick;
             _networkStatusCheckTimer.Start();
-
-            StartDebugging();
         }
 
         private void frmMain_KeyDown(object sender, KeyEventArgs e)
@@ -582,6 +586,16 @@ namespace MeshApp
             }
         }
 
+        private void mnuCheckUpdate_Click(object sender, EventArgs e)
+        {
+            mnuCheckUpdate.Enabled = false;
+
+            if (_node.Proxy != null)
+                _meshUpdate.Proxy = _node.Proxy;
+
+            _meshUpdate.CheckForUpdate();
+        }
+
         private void mnuAboutMesh_Click(object sender, EventArgs e)
         {
             using (frmAbout frm = new frmAbout())
@@ -728,6 +742,25 @@ namespace MeshApp
         }
 
         #endregion
+
+        #endregion
+
+        #region mesh update
+
+        private void meshUpdate_UpdateCheckFailed(MeshUpdate sender, Exception ex)
+        {
+            mnuCheckUpdate.Enabled = true;
+        }
+
+        private void meshUpdate_NoUpdateAvailable(object sender, EventArgs e)
+        {
+            mnuCheckUpdate.Enabled = true;
+        }
+
+        private void meshUpdate_UpdateAvailable(object sender, EventArgs e)
+        {
+            mnuCheckUpdate.Enabled = true;
+        }
 
         #endregion
 

@@ -32,6 +32,7 @@ namespace MeshApp
     {
         #region variables
 
+        readonly MeshUpdate _meshUpdate;
         readonly TorController _torController;
         string _profileFolder;
         bool _isPortableApp;
@@ -47,6 +48,12 @@ namespace MeshApp
         public frmProfileManager(string torExecutableFilePath)
         {
             InitializeComponent();
+
+            //init mesh update
+            _meshUpdate = new MeshUpdate(Program.UPDATE_URI, Program.UPDATE_CHECK_INTERVAL);
+            _meshUpdate.UpdateAvailable += meshUpdate_UpdateAvailable;
+            _meshUpdate.NoUpdateAvailable += meshUpdate_NoUpdateAvailable;
+            _meshUpdate.UpdateCheckFailed += meshUpdate_UpdateCheckFailed;
 
             //init tor controller
             _torController = new TorController(torExecutableFilePath);
@@ -144,7 +151,7 @@ namespace MeshApp
                     else
                         localServicePort = 0; //new random port at startup for Tor node
 
-                    MeshNode node = new MeshNode(frm.NodeType, frm.PrivateKey, SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256, Convert.ToUInt16(localServicePort), frm.ProfileDisplayName, _profileFolder, GetDownloadFolder(), _torController);
+                    MeshNode node = new MeshNode(frm.NodeType, frm.PrivateKey, SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256 | SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256, Convert.ToUInt16(localServicePort), frm.ProfileDisplayName, _profileFolder, GetDownloadFolder(), _torController);
 
                     if (frm.NodeType == MeshNodeType.P2P)
                     {
@@ -177,7 +184,7 @@ namespace MeshApp
 
         private void LoadProfileMainForm(string profileName, MeshNode node, string profileFilePath)
         {
-            frmMain frmMain = new frmMain(node, profileFilePath, _isPortableApp, this);
+            frmMain frmMain = new frmMain(node, profileFilePath, _isPortableApp, _meshUpdate, this);
             _runningProfiles.Add(profileName, frmMain);
 
             ToolStripMenuItem mnuItem = new ToolStripMenuItem(profileName);
@@ -376,7 +383,32 @@ namespace MeshApp
             foreach (KeyValuePair<string, frmMain> frm in _runningProfiles)
                 frm.Value.Close();
 
-            _torController.Stop();
+            _meshUpdate.Dispose();
+            _torController.Dispose();
+        }
+
+        #endregion
+
+        #region mesh update
+
+        private void meshUpdate_UpdateCheckFailed(MeshUpdate sender, Exception ex)
+        {
+            mnuCheckUpdate.Enabled = true;
+            MessageBox.Show("Error ocurred while checking for update:\r\n\r\n" + ex.ToString(), "Mesh Update", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        private void meshUpdate_NoUpdateAvailable(object sender, EventArgs e)
+        {
+            mnuCheckUpdate.Enabled = true;
+            MessageBox.Show("No update was available.", "Mesh Update", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void meshUpdate_UpdateAvailable(object sender, EventArgs e)
+        {
+            mnuCheckUpdate.Enabled = true;
+
+            if (MessageBox.Show("New update is available for download!\r\n\r\nCurrent Version: " + _meshUpdate.CurrentVersion + "\r\nUpdate Version: " + _meshUpdate.UpdateVersion + "\r\n\r\nDetails: " + _meshUpdate.DisplayText + "\r\n\r\nDownload Link: " + _meshUpdate.DownloadLink + "\r\n\r\nDo you want to download the latest update setup now?", "Mesh Update", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                System.Diagnostics.Process.Start(_meshUpdate.DownloadLink);
         }
 
         #endregion
@@ -438,6 +470,12 @@ namespace MeshApp
 
                 txtPassword.Focus();
             }
+        }
+
+        private void mnuCheckUpdate_Click(object sender, EventArgs e)
+        {
+            mnuCheckUpdate.Enabled = false;
+            _meshUpdate.CheckForUpdate();
         }
 
         private void mnuAbout_Click(object sender, EventArgs e)
