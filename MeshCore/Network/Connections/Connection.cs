@@ -75,6 +75,9 @@ namespace MeshCore.Network.Connections
 
         bool _tcpRelayServerModeEnabled = false;
 
+        readonly object _lock = new object();
+        readonly object _baseStreamLock = new object();
+
         #endregion
 
         #region constructor
@@ -105,7 +108,7 @@ namespace MeshCore.Network.Connections
 
         protected virtual void Dispose(bool disposing)
         {
-            lock (this)
+            lock (_lock)
             {
                 if (_disposed)
                     return;
@@ -132,7 +135,7 @@ namespace MeshCore.Network.Connections
                         channel.Dispose();
 
                     //dispose base stream
-                    lock (_baseStream)
+                    lock (_baseStreamLock)
                     {
                         _baseStream.Dispose();
                     }
@@ -157,7 +160,7 @@ namespace MeshCore.Network.Connections
                 if (count < frameCount)
                     frameCount = count;
 
-                lock (_baseStream)
+                lock (_baseStreamLock)
                 {
                     _baseStream.WriteByte((byte)signal); //write frame signal
                     _baseStream.Write(channelId.Value); //write channel id
@@ -688,6 +691,8 @@ namespace MeshCore.Network.Connections
             int _readTimeout = CHANNEL_READ_TIMEOUT;
             int _writeTimeout = CHANNEL_WRITE_TIMEOUT;
 
+            readonly object _lock = new object();
+
             #endregion
 
             #region constructor
@@ -706,7 +711,7 @@ namespace MeshCore.Network.Connections
 
             protected override void Dispose(bool disposing)
             {
-                lock (this)
+                lock (_lock)
                 {
                     if (_disposed)
                         return;
@@ -733,7 +738,7 @@ namespace MeshCore.Network.Connections
                     }
 
                     _disposed = true;
-                    Monitor.PulseAll(this);
+                    Monitor.PulseAll(_lock);
                 }
 
                 base.Dispose(disposing);
@@ -812,14 +817,14 @@ namespace MeshCore.Network.Connections
                 if (count < 1)
                     throw new ArgumentOutOfRangeException("Count cannot be less than 1.");
 
-                lock (this)
+                lock (_lock)
                 {
                     if (_readBufferCount < 1)
                     {
                         if (_disposed)
                             return 0;
 
-                        if (!Monitor.Wait(this, _readTimeout))
+                        if (!Monitor.Wait(_lock, _readTimeout))
                             throw new IOException("Read timed out.");
 
                         if (_readBufferCount < 1)
@@ -837,7 +842,7 @@ namespace MeshCore.Network.Connections
                     _readBufferCount -= bytesToCopy;
 
                     if (_readBufferCount < 1)
-                        Monitor.Pulse(this);
+                        Monitor.Pulse(_lock);
 
                     return bytesToCopy;
                 }
@@ -862,14 +867,14 @@ namespace MeshCore.Network.Connections
 
                 while (count > 0)
                 {
-                    lock (this)
+                    lock (_lock)
                     {
                         if (_disposed)
                             throw new ObjectDisposedException("ChannelStream");
 
                         if (_readBufferCount > 0)
                         {
-                            if (!Monitor.Wait(this, timeout))
+                            if (!Monitor.Wait(_lock, timeout))
                                 throw new IOException("Channel FeedReadBuffer timed out.");
 
                             if (_readBufferCount > 0)
@@ -884,7 +889,7 @@ namespace MeshCore.Network.Connections
                         _readBufferCount = readCount;
                         count -= readCount;
 
-                        Monitor.Pulse(this);
+                        Monitor.Pulse(_lock);
                     }
                 }
             }
