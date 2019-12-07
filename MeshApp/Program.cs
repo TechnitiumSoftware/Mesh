@@ -34,8 +34,8 @@ namespace MeshApp
         #region variables
 
         public const string MUTEX_NAME = "MeshApp";
-        public readonly static Uri UPDATE_URI = new Uri("https://mesh.im/download/windows/update.bin");
-        public const int UPDATE_CHECK_INTERVAL_DAYS = 1;
+        public readonly static Uri UPDATE_URI = new Uri("https://go.technitium.com/?id=30");
+        public const int UPDATE_CHECK_INTERVAL = 1 * 24 * 60 * 60 * 1000; //1 day
 
         static bool _firewallEntryExists;
         static Mutex _app;
@@ -169,7 +169,7 @@ namespace MeshApp
                     }
 
                 default:
-                    return true;
+                    return false;
             }
         }
 
