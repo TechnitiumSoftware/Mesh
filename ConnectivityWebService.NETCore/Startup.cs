@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -98,7 +99,7 @@ namespace ConnectivityWebService.NETCore
 
         #region public
 
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        public void Configure(IApplicationBuilder app, IHostEnvironment env)
         {
             if (env.IsDevelopment())
             {
@@ -203,7 +204,7 @@ namespace ConnectivityWebService.NETCore
 
                             using (context.Response.Body)
                             {
-                                context.Response.Body.Write(output, 0, output.Length);
+                                context.Response.Body.WriteAsync(output, 0, output.Length);
                             }
                         }
                     }
