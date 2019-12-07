@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -225,6 +225,12 @@ namespace MeshCore.Network.DHT
             {
                 if (contact.IsCurrentNode)
                     return ProcessQuery(query, contact.NodeEP);
+
+                if (_currentNode.NodeEP.AddressFamily != contact.NodeEP.AddressFamily)
+                {
+                    contact.IncrementRpcFailCount();
+                    return null;
+                }
 
                 s = _manager.GetConnection(contact.NodeEP);
 
