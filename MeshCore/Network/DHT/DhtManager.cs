@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -68,7 +68,7 @@ namespace MeshCore.Network.DHT
         readonly DhtNode _ipv6InternetDhtNode;
         readonly DhtNode _torInternetDhtNode;
 
-        const string DHT_BOOTSTRAP_URL = "https://mesh.im/dht-bootstrap.bin";
+        const string DHT_BOOTSTRAP_URL = "https://go.technitium.com/?id=32";
         const int BOOTSTRAP_RETRY_TIMER_INITIAL_INTERVAL = 5000;
         const int BOOTSTRAP_RETRY_TIMER_INTERVAL = 60000;
         readonly Timer _bootstrapRetryTimer;
@@ -154,6 +154,9 @@ namespace MeshCore.Network.DHT
 
             if (disposing)
             {
+                if (_bootstrapRetryTimer != null)
+                    _bootstrapRetryTimer.Dispose();
+
                 if (_networkWatcher != null)
                     _networkWatcher.Dispose();
 
@@ -301,7 +304,17 @@ namespace MeshCore.Network.DHT
                                 peers = _ipv4InternetDhtNode.Announce(networkId, serviceEP);
 
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.IPv4Internet, RemoveSelfEndPoint(peers, _ipv4InternetDhtNode.LocalNodeEP));
+                            {
+                                ICollection<EndPoint> finalPeers = RemoveSelfEndPoint(peers, _ipv4InternetDhtNode.LocalNodeEP);
+
+                                if (_torInternetDhtNode != null)
+                                    finalPeers = RemoveSelfEndPoint(peers, _torInternetDhtNode.LocalNodeEP);
+
+                                foreach (EndPoint peer in finalPeers)
+                                    AddNode(peer);
+
+                                callback(DhtNetworkType.IPv4Internet, finalPeers);
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -323,7 +336,17 @@ namespace MeshCore.Network.DHT
                                 peers = _ipv6InternetDhtNode.Announce(networkId, serviceEP);
 
                             if ((callback != null) && (peers != null) && (peers.Length > 0))
-                                callback(DhtNetworkType.IPv6Internet, RemoveSelfEndPoint(peers, _ipv6InternetDhtNode.LocalNodeEP));
+                            {
+                                ICollection<EndPoint> finalPeers = RemoveSelfEndPoint(peers, _ipv6InternetDhtNode.LocalNodeEP);
+
+                                if (_torInternetDhtNode != null)
+                                    finalPeers = RemoveSelfEndPoint(peers, _torInternetDhtNode.LocalNodeEP);
+
+                                foreach (EndPoint peer in finalPeers)
+                                    AddNode(peer);
+
+                                callback(DhtNetworkType.IPv6Internet, finalPeers);
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -682,7 +705,7 @@ namespace MeshCore.Network.DHT
 
             private void ReceiveUdpPacketAsync(object parameter)
             {
-                EndPoint remoteEP = null;
+                EndPoint remoteEP;
                 byte[] buffer = new byte[BUFFER_MAX_SIZE];
                 int bytesRecv;
 
