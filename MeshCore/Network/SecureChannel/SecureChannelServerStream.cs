@@ -34,7 +34,7 @@ namespace MeshCore.Network.SecureChannel
         readonly byte[] _preSharedKey;
         readonly BinaryNumber _userId;
         readonly byte[] _privateKey;
-        IEnumerable<BinaryNumber> _trustedUserIds;
+        readonly IEnumerable<BinaryNumber> _trustedUserIds;
 
         #endregion
 
@@ -146,9 +146,17 @@ namespace MeshCore.Network.SecureChannel
             {
                 throw new SecureChannelException(SecureChannelCode.NoMatchingCipherAvailable, _remotePeerEP, _remotePeerUserId);
             }
+            else if (availableCiphers.HasFlag(SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256))
+            {
+                _selectedCipher = SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256;
+            }
             else if (availableCiphers.HasFlag(SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256))
             {
                 _selectedCipher = SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256;
+            }
+            else if (availableCiphers.HasFlag(SecureChannelCipherSuite.ECDHE256_ANON_WITH_AES256_CBC_HMAC_SHA256))
+            {
+                _selectedCipher = SecureChannelCipherSuite.ECDHE256_ANON_WITH_AES256_CBC_HMAC_SHA256;
             }
             else if (availableCiphers.HasFlag(SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256))
             {
@@ -178,6 +186,11 @@ namespace MeshCore.Network.SecureChannel
                 case SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                     keyAgreement = new DiffieHellman(DiffieHellmanGroupType.RFC3526_GROUP14_2048BIT, KeyAgreementKeyDerivationFunction.Hmac, KeyAgreementKeyDerivationHashAlgorithm.SHA256);
+                    break;
+
+                case SecureChannelCipherSuite.ECDHE256_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                    keyAgreement = new ECDiffieHellman(256, KeyAgreementKeyDerivationFunction.Hmac, KeyAgreementKeyDerivationHashAlgorithm.SHA256);
                     break;
 
                 default:
@@ -211,6 +224,7 @@ namespace MeshCore.Network.SecureChannel
             switch (_selectedCipher)
             {
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                     if (_options.HasFlag(SecureChannelOptions.CLIENT_AUTHENTICATION_REQUIRED))
                     {
                         //read client auth
@@ -232,6 +246,7 @@ namespace MeshCore.Network.SecureChannel
                     break;
 
                 case SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.ECDHE256_ANON_WITH_AES256_CBC_HMAC_SHA256:
                     break; //no auth for ANON
 
                 default:

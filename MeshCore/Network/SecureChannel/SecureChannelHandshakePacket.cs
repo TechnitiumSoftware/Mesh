@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -203,6 +203,8 @@ namespace MeshCore.Network.SecureChannel
                 {
                     case SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
                     case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                    case SecureChannelCipherSuite.ECDHE256_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                    case SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                         using (HMAC hmac = new HMACSHA256(psk))
                         {
                             return new BinaryNumber(hmac.ComputeHash(mS));
@@ -260,11 +262,12 @@ namespace MeshCore.Network.SecureChannel
         public SecureChannelHandshakeAuthentication(SecureChannelHandshakeKeyExchange keyExchange, SecureChannelHandshakeHello serverHello, SecureChannelHandshakeHello clientHello, BinaryNumber userId, byte[] privateKey)
             : base(SecureChannelCode.None)
         {
+            _userId = userId;
+
             switch (serverHello.SupportedCiphers)
             {
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
-                    _userId = userId;
-
+                case SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                     using (RSA rsa = RSA.Create())
                     {
                         RSAParameters rsaPrivateKey = DEREncoding.DecodeRSAPrivateKey(privateKey);
@@ -280,9 +283,9 @@ namespace MeshCore.Network.SecureChannel
 
                         using (MemoryStream mS = new MemoryStream())
                         {
-                            mS.Write(keyExchange.EphemeralPublicKey, 0, keyExchange.EphemeralPublicKey.Length);
-                            mS.Write(serverHello.Nonce.Value, 0, serverHello.Nonce.Value.Length);
-                            mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
+                            mS.Write(keyExchange.EphemeralPublicKey);
+                            mS.Write(serverHello.Nonce.Value);
+                            mS.Write(clientHello.Nonce.Value);
                             mS.Position = 0;
 
                             _signature = rsa.SignData(mS, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -337,6 +340,7 @@ namespace MeshCore.Network.SecureChannel
             switch (serverHello.SupportedCiphers)
             {
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
                     using (RSA rsa = RSA.Create())
                     {
                         RSAParameters rsaPublicKey = DEREncoding.DecodeRSAPublicKey(_publicKey);
@@ -347,9 +351,9 @@ namespace MeshCore.Network.SecureChannel
 
                         using (MemoryStream mS = new MemoryStream())
                         {
-                            mS.Write(keyExchange.EphemeralPublicKey, 0, keyExchange.EphemeralPublicKey.Length);
-                            mS.Write(serverHello.Nonce.Value, 0, serverHello.Nonce.Value.Length);
-                            mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
+                            mS.Write(keyExchange.EphemeralPublicKey);
+                            mS.Write(serverHello.Nonce.Value);
+                            mS.Write(clientHello.Nonce.Value);
                             mS.Position = 0;
 
                             return rsa.VerifyData(mS, _signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);

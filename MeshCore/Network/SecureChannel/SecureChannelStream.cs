@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -93,13 +93,17 @@ FEATURES-
 
 namespace MeshCore.Network.SecureChannel
 {
+    [Flags]
     public enum SecureChannelCipherSuite : byte
     {
         None = 0,
         DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256 = 1,
-        DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256 = 2
+        DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256 = 2,
+        ECDHE256_ANON_WITH_AES256_CBC_HMAC_SHA256 = 4,
+        ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256 = 8
     }
 
+    [Flags]
     public enum SecureChannelOptions : byte
     {
         None = 0,
@@ -197,18 +201,29 @@ namespace MeshCore.Network.SecureChannel
                 }
 
                 //dispose
-                _baseStream?.Dispose();
+                if (_baseStream != null)
+                    _baseStream.Dispose();
 
-                _renegotiationTimer?.Dispose();
+                if (_renegotiationTimer != null)
+                    _renegotiationTimer.Dispose();
 
-                _encryptor?.Dispose();
-                _decryptor?.Dispose();
+                if (_encryptor != null)
+                    _encryptor.Dispose();
 
-                _encryptionAlgo?.Dispose();
-                _decryptionAlgo?.Dispose();
+                if (_decryptor != null)
+                    _decryptor.Dispose();
 
-                _authHMACEncrypt?.Dispose();
-                _authHMACDecrypt?.Dispose();
+                if (_encryptionAlgo != null)
+                    _encryptionAlgo.Dispose();
+
+                if (_decryptionAlgo != null)
+                    _decryptionAlgo.Dispose();
+
+                if (_authHMACEncrypt != null)
+                    _authHMACEncrypt.Dispose();
+
+                if (_authHMACDecrypt != null)
+                    _authHMACDecrypt.Dispose();
             }
 
             _disposed = true;
@@ -622,10 +637,10 @@ namespace MeshCore.Network.SecureChannel
         {
             using (MemoryStream mS = new MemoryStream(128))
             {
-                mS.Write(serverHello.Nonce.Value, 0, serverHello.Nonce.Value.Length);
-                mS.Write(clientHello.Nonce.Value, 0, clientHello.Nonce.Value.Length);
+                mS.Write(serverHello.Nonce.Value);
+                mS.Write(clientHello.Nonce.Value);
 
-                keyAgreement.HmacMessage = mS.ToArray();
+                keyAgreement.HmacKey = mS.ToArray();
             }
 
             byte[] masterKey = keyAgreement.DeriveKeyMaterial(otherPartyKeyExchange.EphemeralPublicKey);
@@ -634,6 +649,8 @@ namespace MeshCore.Network.SecureChannel
             {
                 case SecureChannelCipherSuite.DHE2048_ANON_WITH_AES256_CBC_HMAC_SHA256:
                 case SecureChannelCipherSuite.DHE2048_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.ECDHE256_ANON_WITH_AES256_CBC_HMAC_SHA256:
+                case SecureChannelCipherSuite.ECDHE256_RSA2048_WITH_AES256_CBC_HMAC_SHA256:
 
                     //generating AES IV of 128bit block size using MD5
                     byte[] eIV;
