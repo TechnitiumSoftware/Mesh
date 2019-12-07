@@ -49,8 +49,11 @@ namespace MeshApp
         {
             InitializeComponent();
 
+            //init profiles
+            RefreshProfileList();
+
             //init mesh update
-            _meshUpdate = new MeshUpdate(Program.UPDATE_URI, Program.UPDATE_CHECK_INTERVAL);
+            _meshUpdate = new MeshUpdate(_isPortableApp ? Program.UPDATE_URI_WINDOWS_PORTABLE_APP : Program.UPDATE_URI_WINDOWS_SETUP_APP, Program.UPDATE_CHECK_INTERVAL);
             _meshUpdate.UpdateAvailable += meshUpdate_UpdateAvailable;
             _meshUpdate.NoUpdateAvailable += meshUpdate_NoUpdateAvailable;
             _meshUpdate.UpdateCheckFailed += meshUpdate_UpdateCheckFailed;
