@@ -39,7 +39,7 @@
             this.mnuChangePhoto = new System.Windows.Forms.ToolStripMenuItem();
             this.mnuRemovePhoto = new System.Windows.Forms.ToolStripMenuItem();
             this.picIcon = new System.Windows.Forms.PictureBox();
-            this.lnkView = new System.Windows.Forms.LinkLabel();
+            this.btnDetails = new System.Windows.Forms.Button();
             this.mnuCopyUtility.SuspendLayout();
             this.mnuProfileImage.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.picIcon)).BeginInit();
@@ -75,7 +75,7 @@
             // 
             this.btnClose.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.btnClose.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-            this.btnClose.Location = new System.Drawing.Point(197, 322);
+            this.btnClose.Location = new System.Drawing.Point(196, 320);
             this.btnClose.Name = "btnClose";
             this.btnClose.Size = new System.Drawing.Size(75, 23);
             this.btnClose.TabIndex = 2;
@@ -148,18 +148,16 @@
             this.picIcon.MouseLeave += new System.EventHandler(this.picIcon_MouseLeave);
             this.picIcon.MouseUp += new System.Windows.Forms.MouseEventHandler(this.labIcon_MouseUp);
             // 
-            // lnkView
+            // btnDetails
             // 
-            this.lnkView.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
-            this.lnkView.AutoSize = true;
-            this.lnkView.LinkColor = System.Drawing.Color.FromArgb(((int)(((byte)(102)))), ((int)(((byte)(153)))), ((int)(((byte)(255)))));
-            this.lnkView.Location = new System.Drawing.Point(12, 327);
-            this.lnkView.Name = "lnkView";
-            this.lnkView.Size = new System.Drawing.Size(65, 13);
-            this.lnkView.TabIndex = 46;
-            this.lnkView.TabStop = true;
-            this.lnkView.Text = "View Details";
-            this.lnkView.LinkClicked += new System.Windows.Forms.LinkLabelLinkClickedEventHandler(this.lnkView_LinkClicked);
+            this.btnDetails.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.btnDetails.Location = new System.Drawing.Point(13, 320);
+            this.btnDetails.Name = "btnDetails";
+            this.btnDetails.Size = new System.Drawing.Size(75, 23);
+            this.btnDetails.TabIndex = 46;
+            this.btnDetails.Text = "&Details";
+            this.btnDetails.UseVisualStyleBackColor = true;
+            this.btnDetails.Click += new System.EventHandler(this.btnDetails_Click);
             // 
             // frmViewProfile
             // 
@@ -169,7 +167,7 @@
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(250)))), ((int)(((byte)(250)))), ((int)(((byte)(250)))));
             this.CancelButton = this.btnClose;
             this.ClientSize = new System.Drawing.Size(284, 351);
-            this.Controls.Add(this.lnkView);
+            this.Controls.Add(this.btnDetails);
             this.Controls.Add(this.labStatus);
             this.Controls.Add(this.btnClose);
             this.Controls.Add(this.labName);
@@ -187,7 +185,6 @@
             this.mnuProfileImage.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.picIcon)).EndInit();
             this.ResumeLayout(false);
-            this.PerformLayout();
 
         }
 
@@ -201,8 +198,8 @@
         private System.Windows.Forms.ContextMenuStrip mnuProfileImage;
         private System.Windows.Forms.ToolStripMenuItem mnuChangePhoto;
         private System.Windows.Forms.ToolStripMenuItem mnuRemovePhoto;
-        private System.Windows.Forms.LinkLabel lnkView;
         private System.Windows.Forms.ContextMenuStrip mnuCopyUtility;
         private System.Windows.Forms.ToolStripMenuItem mnuCopy;
+        private System.Windows.Forms.Button btnDetails;
     }
 }

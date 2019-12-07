@@ -159,7 +159,7 @@ namespace MeshApp
                         peerIPs += ", " + peerEP.ToString();
                 }
 
-                lstConnectedWith.Items.Add(peerInfo.PeerDisplayName + " [" + peerInfo.PeerUserId.ToString() + "]").SubItems.Add(peerIPs);
+                lstConnectedWith.Items.Add(peerInfo.ToString()).SubItems.Add(peerIPs);
             }
 
             //not connected with
@@ -177,7 +177,7 @@ namespace MeshApp
                         peerIPs += ", " + peerEP.ToString();
                 }
 
-                lstNotConnectedWith.Items.Add(peerInfo.PeerDisplayName + " [" + peerInfo.PeerUserId.ToString() + "]").SubItems.Add(peerIPs);
+                lstNotConnectedWith.Items.Add(peerInfo.ToString()).SubItems.Add(peerIPs);
             }
         }
 

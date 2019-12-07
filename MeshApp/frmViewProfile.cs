@@ -218,7 +218,7 @@ namespace MeshApp
             }
         }
 
-        private void lnkView_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        private void btnDetails_Click(object sender, EventArgs e)
         {
             using (frmViewUserDetails frm = new frmViewUserDetails(_peer))
             {
