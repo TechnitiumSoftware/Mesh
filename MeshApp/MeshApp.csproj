@@ -92,22 +92,22 @@
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
-    <Reference Include="TechnitiumLibrary.IO, Version=2.5.1.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="TechnitiumLibrary.IO, Version=2.5.4.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.IO.dll</HintPath>
     </Reference>
-    <Reference Include="TechnitiumLibrary.Net, Version=2.5.5.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="TechnitiumLibrary.Net, Version=3.4.1.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.dll</HintPath>
     </Reference>
     <Reference Include="TechnitiumLibrary.Net.Firewall">
       <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.Firewall.dll</HintPath>
     </Reference>
-    <Reference Include="TechnitiumLibrary.Net.Tor, Version=1.1.0.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="TechnitiumLibrary.Net.Tor, Version=1.2.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Net.Tor.dll</HintPath>
     </Reference>
-    <Reference Include="TechnitiumLibrary.Security.Cryptography, Version=2.2.4.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="TechnitiumLibrary.Security.Cryptography, Version=2.3.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\TechnitiumLibrary\bin\TechnitiumLibrary.Security.Cryptography.dll</HintPath>
     </Reference>
@@ -396,7 +396,40 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="logo2.ico" />
+    <None Include="logo2.ico" />
+    <Content Include="tor\libcrypto-1_1.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\libevent-2-1-6.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\libevent_core-2-1-6.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\libevent_extra-2-1-6.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\libgcc_s_sjlj-1.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\libssl-1_1.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\libssp-0.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\libwinpthread-1.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\tor-gencert.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\tor.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tor\zlib1.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <None Include="app.config" />
     <None Include="app.manifest" />
     <None Include="Resources\message-failed.png" />
@@ -433,7 +466,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MeshCore\MeshCore.csproj">
-      <Project>{76065e70-a175-49d7-861a-d68a7f4e3aad}</Project>
+      <Project>{0a0c6ce7-0f1a-4d67-bf86-b961b826da76}</Project>
       <Name>MeshCore</Name>
     </ProjectReference>
   </ItemGroup>
