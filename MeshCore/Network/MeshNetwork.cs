@@ -132,6 +132,8 @@ namespace MeshCore.Network
         const int PING_TIMER_INTERVAL = 30000;
         Timer _pingTimer;
 
+        readonly object _lock = new object();
+
         #endregion
 
         #region constructor
@@ -264,7 +266,7 @@ namespace MeshCore.Network
 
         protected virtual void Dispose(bool disposing)
         {
-            lock (this)
+            lock (_lock)
             {
                 if (_disposed)
                     return;
@@ -464,7 +466,7 @@ namespace MeshCore.Network
             if (_type == MeshNetworkType.Private)
             {
                 //load other peer
-                _otherPeer = new Peer(this, knownPeers[0].PeerUserId, knownPeers[0].PeerDisplayName, (_status == MeshNetworkStatus.Offline ? knownPeers[0].PeerEPs : null)); //init known peers only for offline networks to prevent knoen peers list for growing endlessly
+                _otherPeer = new Peer(this, knownPeers[0].PeerUserId, knownPeers[0].PeerDisplayName, (_status == MeshNetworkStatus.Offline ? knownPeers[0].PeerEPs : null)); //init known peers only for offline networks to prevent known peers list form growing endlessly
 
                 if ((_status == MeshNetworkStatus.Online) && (knownPeers[0].PeerEPs != null))
                 {
@@ -485,7 +487,7 @@ namespace MeshCore.Network
                 {
                     foreach (MeshNetworkPeerInfo knownPeer in knownPeers)
                     {
-                        _peers.Add(knownPeer.PeerUserId, new Peer(this, knownPeer.PeerUserId, knownPeer.PeerDisplayName, (_status == MeshNetworkStatus.Offline ? knownPeer.PeerEPs : null)));//init known peers only for offline networks to prevent knoen peers list for growing endlessly
+                        _peers.Add(knownPeer.PeerUserId, new Peer(this, knownPeer.PeerUserId, knownPeer.PeerDisplayName, (_status == MeshNetworkStatus.Offline ? knownPeer.PeerEPs : null))); //init known peers only for offline networks to prevent known peers list form growing endlessly
 
                         if ((_status == MeshNetworkStatus.Online) && (knownPeer.PeerEPs != null))
                         {
@@ -1097,7 +1099,7 @@ namespace MeshCore.Network
 
         private void UpdateConnectivityStatus()
         {
-            lock (this)
+            lock (_lock)
             {
                 List<MeshNetworkPeerInfo> uniquePeerInfoList = new List<MeshNetworkPeerInfo>();
 
@@ -2305,11 +2307,6 @@ namespace MeshCore.Network
                 }
             }
 
-            private void DoSendGroupImage(Session session)
-            {
-                session.SendMessage(new MeshNetworkPacketGroupDisplayImage(_network._groupDisplayImageDateModified, _network._groupDisplayImage));
-            }
-
             #endregion
 
             #region public
@@ -2482,9 +2479,9 @@ namespace MeshCore.Network
             {
                 #region variables
 
-                Thread _thread;
-
-                string _filePath;
+                readonly Thread _thread;
+                
+                readonly string _filePath;
                 FileTransferStatus _status;
                 long _bytesReceived;
                 long _fileSize;
@@ -2643,6 +2640,9 @@ namespace MeshCore.Network
                 readonly Dictionary<ushort, DataStream> _dataStreams = new Dictionary<ushort, DataStream>();
                 ushort _lastPort = 0;
 
+                readonly object _lock = new object();
+                readonly object _channelLock = new object();
+
                 #endregion
 
                 #region constructor
@@ -2676,7 +2676,7 @@ namespace MeshCore.Network
 
                 protected virtual void Dispose(bool disposing)
                 {
-                    lock (this)
+                    lock (_lock)
                     {
                         if (_disposed)
                             return;
@@ -2724,7 +2724,7 @@ namespace MeshCore.Network
                         if (count < packetCount)
                             packetCount = count;
 
-                        lock (_channel)
+                        lock (_channelLock)
                         {
                             _channel.Write(BitConverter.GetBytes(port), 0, 2); //write port
                             _channel.Write(BitConverter.GetBytes(Convert.ToUInt16(packetCount)), 0, 2); //write data length
@@ -3188,6 +3188,8 @@ namespace MeshCore.Network
                     int _readTimeout = DATA_READ_TIMEOUT;
                     int _writeTimeout = DATA_WRITE_TIMEOUT;
 
+                    readonly object _lock = new object();
+
                     #endregion
 
                     #region constructor
@@ -3206,7 +3208,7 @@ namespace MeshCore.Network
 
                     protected override void Dispose(bool disposing)
                     {
-                        lock (this)
+                        lock (_lock)
                         {
                             if (_disposed)
                                 return;
@@ -3232,7 +3234,7 @@ namespace MeshCore.Network
                                     }
                                 }
 
-                                Monitor.PulseAll(this);
+                                Monitor.PulseAll(_lock);
                             }
 
                             _disposed = true;
@@ -3327,14 +3329,14 @@ namespace MeshCore.Network
                         if (count < 1)
                             throw new ArgumentOutOfRangeException("Count cannot be less than 1.");
 
-                        lock (this)
+                        lock (_lock)
                         {
                             if (_readBufferCount < 1)
                             {
                                 if (_disposed)
                                     return 0;
 
-                                if (!Monitor.Wait(this, _readTimeout))
+                                if (!Monitor.Wait(_lock, _readTimeout))
                                     throw new IOException("Read timed out.");
 
                                 if (_readBufferCount < 1)
@@ -3352,7 +3354,7 @@ namespace MeshCore.Network
                             _readBufferCount -= bytesToCopy;
 
                             if (_readBufferCount < 1)
-                                Monitor.Pulse(this);
+                                Monitor.Pulse(_lock);
 
                             return bytesToCopy;
                         }
@@ -3385,14 +3387,14 @@ namespace MeshCore.Network
 
                         while (count > 0)
                         {
-                            lock (this)
+                            lock (_lock)
                             {
                                 if (_disposed)
                                     throw new ObjectDisposedException("DataStream");
 
                                 if (_readBufferCount > 0)
                                 {
-                                    if (!Monitor.Wait(this, timeout))
+                                    if (!Monitor.Wait(_lock, timeout))
                                         throw new IOException("DataStream FeedReadBuffer timed out.");
 
                                     if (_readBufferCount > 0)
@@ -3407,7 +3409,7 @@ namespace MeshCore.Network
                                 _readBufferCount = readCount;
                                 count -= readCount;
 
-                                Monitor.Pulse(this);
+                                Monitor.Pulse(_lock);
                             }
                         }
                     }
