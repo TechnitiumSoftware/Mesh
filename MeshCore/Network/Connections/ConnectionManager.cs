@@ -285,6 +285,16 @@ namespace MeshCore.Network.Connections
 
                 foreach (Connection connection in connections)
                     connection.Dispose();
+
+                if (_torHiddenServiceInfo != null)
+                {
+                    try
+                    {
+                        _torController.DeleteHiddenService(_torHiddenServiceInfo.ServiceId);
+                    }
+                    catch
+                    { }
+                }
             }
 
             _disposed = true;
@@ -305,13 +315,7 @@ namespace MeshCore.Network.Connections
                 if ((_node.Type == MeshNodeType.Anonymous) || (remoteNodeEP.AddressFamily == AddressFamily.Unspecified))
                 {
                     if (!_torController.IsRunning)
-                    {
-                        lock (_torController) //lock to prevent multiple start attempts
-                        {
-                            if (!_torController.IsRunning)
-                                _torController.Start();
-                        }
-                    }
+                        _torController.Start();
 
                     socket = _torProxy.Connect(remoteNodeEP, TOR_CONNECTION_TIMEOUT);
                 }
@@ -923,8 +927,7 @@ namespace MeshCore.Network.Connections
                     remoteNodeEP = new IPEndPoint(ep.Address.MapToIPv4(), ep.Port);
             }
 
-            NetworkStream nS = new NetworkStream(MakeTcpConnection(remoteNodeEP), true);
-            Stream s = new WriteBufferedStream(nS, 1024);
+            Stream s = new WriteBufferedStream(new NetworkStream(MakeTcpConnection(remoteNodeEP), true), 1024);
 
             try
             {
@@ -934,7 +937,7 @@ namespace MeshCore.Network.Connections
             }
             catch
             {
-                nS.Dispose();
+                s.Dispose();
                 throw;
             }
 
