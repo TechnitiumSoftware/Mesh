@@ -7,9 +7,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeshApp", "MeshApp\MeshApp.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ConnectivityWebService.NETCore", "ConnectivityWebService.NETCore\ConnectivityWebService.NETCore.csproj", "{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeshCore", "MeshCore\MeshCore.csproj", "{0A0C6CE7-0F1A-4D67-BF86-B961B826DA76}"
-EndProject
 Project("{54435603-DBB4-11D2-8724-00A0C9A8B90C}") = "MeshSetup", "MeshSetup\MeshSetup.vdproj", "{C7B0615D-0DBC-4887-8098-B9845C99C267}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeshCore", "MeshCore\MeshCore.csproj", "{D6B9A05E-7417-4902-8B41-114CD0A8130E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -25,12 +25,12 @@ Global
 		{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{19C011EE-4DB3-406B-A2C1-7A13D7ED8F5F}.Release|Any CPU.Build.0 = Release|Any CPU
-		{0A0C6CE7-0F1A-4D67-BF86-B961B826DA76}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{0A0C6CE7-0F1A-4D67-BF86-B961B826DA76}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{0A0C6CE7-0F1A-4D67-BF86-B961B826DA76}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{0A0C6CE7-0F1A-4D67-BF86-B961B826DA76}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C7B0615D-0DBC-4887-8098-B9845C99C267}.Debug|Any CPU.ActiveCfg = Debug
 		{C7B0615D-0DBC-4887-8098-B9845C99C267}.Release|Any CPU.ActiveCfg = Release
+		{D6B9A05E-7417-4902-8B41-114CD0A8130E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6B9A05E-7417-4902-8B41-114CD0A8130E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6B9A05E-7417-4902-8B41-114CD0A8130E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6B9A05E-7417-4902-8B41-114CD0A8130E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
