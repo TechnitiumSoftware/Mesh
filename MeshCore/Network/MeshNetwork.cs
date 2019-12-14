@@ -652,7 +652,7 @@ namespace MeshCore.Network
                         break;
                 }
 
-                //prevent make connection for last known peers if mesh network is unstable
+                //prevent make connection for last known peers if mesh network is stable
                 bool isNetworkStable = IsNetworkStable();
 
                 lock (_dhtLastKnownPeers)
@@ -2094,6 +2094,8 @@ namespace MeshCore.Network
                     if (!_isOnline)
                     {
                         _connectivityStatus = PeerConnectivityStatus.NoNetwork;
+                        _connectedPeerList = null;
+                        _disconnectedPeerList = null;
 
                         RaiseEventStateChanged(); //notify UI that peer is offline
                     }
@@ -2132,23 +2134,22 @@ namespace MeshCore.Network
                 {
                     sessions.AddRange(_sessions);
                     _sessions.Clear(); //clear to prevent UI notifications and peer exchange & DHT trigger
-                    _isOnline = false;
                 }
                 finally
                 {
                     _sessionsLock.ExitWriteLock();
                 }
 
+                _isOnline = false;
+                _connectivityStatus = PeerConnectivityStatus.NoNetwork;
+                _connectedPeerList = null;
+                _disconnectedPeerList = null;
+
+                foreach (Session session in sessions)
+                    session.Dispose();
+
                 if (sessions.Count > 0)
-                {
-                    foreach (Session session in sessions)
-                        session.Dispose();
-
-                    _isOnline = false;
-                    _connectivityStatus = PeerConnectivityStatus.NoNetwork;
-
                     RaiseEventStateChanged(); //notify UI that peer is offline
-                }
             }
 
             internal bool IsConnectedVia(EndPoint peerEP)
@@ -2480,7 +2481,7 @@ namespace MeshCore.Network
                 #region variables
 
                 readonly Thread _thread;
-                
+
                 readonly string _filePath;
                 FileTransferStatus _status;
                 long _bytesReceived;
