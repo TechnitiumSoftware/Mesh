@@ -103,7 +103,7 @@ namespace MeshApp
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Error! " + ex.Message + "\r\n\r\nClick OK to quit the application.", "Error - Mesh App", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Error! " + ex.ToString() + "\r\n\r\nClick OK to quit the application.", "Error - Mesh App", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
