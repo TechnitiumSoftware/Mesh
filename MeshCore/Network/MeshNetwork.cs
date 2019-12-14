@@ -2207,7 +2207,8 @@ namespace MeshCore.Network
 
                     if (_network._type == MeshNetworkType.Private)
                     {
-                        connectedPeerList.Add(this.GetPeerInfo());
+                        if (this.IsOnline)
+                            connectedPeerList.Add(this.GetPeerInfo());
 
                         if (_network._otherPeer._isOnline)
                             connectedPeerList.Add(_network._otherPeer.GetPeerInfo());
