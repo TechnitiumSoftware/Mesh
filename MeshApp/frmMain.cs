@@ -568,10 +568,13 @@ namespace MeshApp
                     _node.AllowOnlyLocalInboundInvitations = frm.AllowOnlyLocalInboundInvitations;
                     _node.EnableUPnP = frm.EnableUPnP;
 
-                    if (frm.EnableProxy)
-                        _node.ConfigureProxy(frm.ProxyType, frm.ProxyAddress, frm.ProxyPort, frm.ProxyCredentials);
-                    else
-                        _node.DisableProxy();
+                    if (_node.Type != MeshNodeType.Anonymous)
+                    {
+                        if (frm.EnableProxy)
+                            _node.ConfigureProxy(frm.ProxyType, frm.ProxyAddress, frm.ProxyPort, frm.ProxyCredentials);
+                        else
+                            _node.DisableProxy();
+                    }
 
                     SaveProfile();
                 }
