@@ -167,7 +167,7 @@ namespace MeshCore.Network.DHT
                     case AddressFamily.InterNetworkV6:
                         IPAddress remoteNodeAddress = (remoteNodeEP as IPEndPoint).Address;
 
-                        if (IPAddress.IsLoopback(remoteNodeAddress) && (query.SourceNodeEP.AddressFamily == AddressFamily.Unspecified) && (query.SourceNodeEP as DomainEndPoint).Address.EndsWith(".onion", StringComparison.CurrentCultureIgnoreCase))
+                        if (IPAddress.IsLoopback(remoteNodeAddress) && (query.SourceNodeEP.AddressFamily == AddressFamily.Unspecified) && (query.SourceNodeEP as DomainEndPoint).Address.EndsWith(".onion", StringComparison.OrdinalIgnoreCase))
                             AddNode(query.SourceNodeEP); //use the tor hidden end point claimed by remote node
                         else
                             AddNode(new IPEndPoint(remoteNodeAddress, query.SourceNodeEP.GetPort())); //use remote node end point as seen by connection manager and use port from query
@@ -709,7 +709,7 @@ namespace MeshCore.Network.DHT
                 switch (peerEP.AddressFamily)
                 {
                     case AddressFamily.Unspecified:
-                        if (!(peerEP as DomainEndPoint).Address.EndsWith(".onion", StringComparison.CurrentCultureIgnoreCase)) //allow only .onion domain end points
+                        if (!(peerEP as DomainEndPoint).Address.EndsWith(".onion", StringComparison.OrdinalIgnoreCase)) //allow only .onion domain end points
                             return;
 
                         break;
