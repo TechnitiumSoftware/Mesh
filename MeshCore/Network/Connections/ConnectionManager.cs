@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2020  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -210,7 +210,7 @@ namespace MeshCore.Network.Connections
             _localPeerId = BinaryNumber.GenerateRandomNumber256();
 
             //tor proxy
-            _torProxy = new NetProxy(new SocksClient(_torController.Socks5EndPoint));
+            _torProxy = NetProxy.CreateSocksProxy(_torController.Socks5EndPoint);
 
             if (_node.Type == MeshNodeType.Anonymous)
             {

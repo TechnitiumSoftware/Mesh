@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2020  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -112,26 +112,12 @@ namespace MeshApp
             try
             {
                 NetProxyType proxyType = this.ProxyType;
-                NetProxy proxy;
                 NetworkCredential credentials = null;
 
                 if (chkProxyAuth.Checked)
                     credentials = new NetworkCredential(txtProxyUser.Text, txtProxyPass.Text);
 
-                switch (proxyType)
-                {
-                    case NetProxyType.Http:
-                        proxy = new NetProxy(new WebProxyEx(new Uri("http://" + txtProxyAddress.Text + ":" + int.Parse(txtProxyPort.Text)), false, new string[] { }, credentials));
-                        break;
-
-                    case NetProxyType.Socks5:
-                        proxy = new NetProxy(new SocksClient(txtProxyAddress.Text, int.Parse(txtProxyPort.Text), credentials));
-                        break;
-
-                    default:
-                        return;
-                }
-
+                NetProxy proxy = NetProxy.CreateProxy(proxyType, txtProxyAddress.Text, int.Parse(txtProxyPort.Text), credentials);
                 proxy.CheckProxyAccess();
 
                 MessageBox.Show("Mesh was able to connect to the proxy server successfully.", "Proxy Check Success!", MessageBoxButtons.OK, MessageBoxIcon.Information);

@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2020  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,7 +48,7 @@ namespace MeshCore
         readonly string _currentVersion;
         readonly SynchronizationContext _syncCxt = SynchronizationContext.Current;
         readonly Timer _updateCheckTimer;
-        NetProxy _proxy = NetProxy.GetDefaultProxy();
+        NetProxy _proxy = NetProxy.CreateSystemHttpProxy();
 
         const int UPDATE_CHECK_TIMER_INITIAL_INTERVAL = 1000;
         const int UPDATE_CHECK_TIMER_PERIODIC_INTERVAL = 1 * 60 * 60 * 1000;

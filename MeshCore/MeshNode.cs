@@ -1,6 +1,6 @@
 ﻿/*
 Technitium Mesh
-Copyright (C) 2018  Shreyas Zare (shreyas@technitium.com)
+Copyright (C) 2020  Shreyas Zare (shreyas@technitium.com)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -320,7 +320,7 @@ namespace MeshCore
 
                     //
                     if (bR.ReadBoolean())
-                        _proxy = new NetProxy((NetProxyType)bR.ReadByte(), bR.ReadShortString(), bR.ReadUInt16(), (bR.ReadBoolean() ? new NetworkCredential(bR.ReadShortString(), bR.ReadShortString()) : null));
+                        _proxy = NetProxy.CreateProxy((NetProxyType)bR.ReadByte(), bR.ReadShortString(), bR.ReadUInt16(), (bR.ReadBoolean() ? new NetworkCredential(bR.ReadShortString(), bR.ReadShortString()) : null));
 
                     //
                     _appData = bR.ReadBuffer();
@@ -544,7 +544,7 @@ namespace MeshCore
             if (proxyType == NetProxyType.None)
                 _proxy = null;
             else
-                _proxy = new NetProxy(proxyType, proxyAddress, proxyPort, proxyCredentials);
+                _proxy = NetProxy.CreateProxy(proxyType, proxyAddress, proxyPort, proxyCredentials);
 
             //update proxy for networks
             lock (_networks)
